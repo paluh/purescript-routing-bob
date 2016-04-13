@@ -7,7 +7,7 @@
     "type": "git",
     "url": "git://github.com/paluh/purescript-routing-bob.git"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "moduleType": [
     "node"
   ],
