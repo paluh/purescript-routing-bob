@@ -1,4 +1,4 @@
-module Routing.Boob where
+module Routing.Bob where
 
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Debug.Trace (trace)
@@ -92,8 +92,8 @@ signatureToSpineBoomerang s@(SigProd n cs) =
 
     step r e = cons </> lazy <<< signatureToSpineBoomerang (e unit) <<< r
 
-boob :: forall a r. (Generic a) => Proxy a -> StringBoomerang r (HCons a r)
-boob p =
+bob :: forall a r. (Generic a) => Proxy a -> StringBoomerang r (HCons a r)
+bob p =
   maph prs (\v -> Just (Just v)) <<< maph fromSpine (toSpine <$> _) <<< (signatureToSpineBoomerang (toSignature p))
  where
   prs (Just s) = s
