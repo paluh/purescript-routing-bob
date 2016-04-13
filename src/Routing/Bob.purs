@@ -2,13 +2,14 @@ module Routing.Bob where
 
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Debug.Trace (trace)
-import Data.Array.Unsafe (head)
+import Data.Array (length)
+import Data.Array.Unsafe (head, tail)
 import Data.Foldable (foldl, foldr)
 import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..),
                      GenericSpine(..), toSignature, toSpine)
 import Data.List (fromFoldable, List)
 import Data.Maybe (Maybe(..))
-import Prelude (const, show, unit, Unit, (<<<), (<>), (==), (<$>), ($))
+import Prelude (const, id, show, unit, Unit, (<<<), (<>), (==), (<$>), ($))
 import Text.Boomerang.Combinators (cons, maph, nil)
 import Text.Boomerang.HStack (HCons)
 import Text.Boomerang.Prim (Boomerang)
@@ -78,20 +79,33 @@ signatureToSpineBoomerang (SigRecord props) =
     recSer _               = Nothing
 signatureToSpineBoomerang s@(SigProd n cs) =
   -- XXX: this is coorectly only for single constructor
-  let constructor = (head cs) in
-  fromConstructor constructor
+  let constructor = (head cs)
+  in
+    if length cs == 1
+      then fromConstructor constructor false
+    else
+      foldl constructorStep (fromConstructor constructor true) (tail cs)
  where
-  fromConstructor :: forall s. DataConstructor -> StringBoomerang s (HCons GenericSpine s)
-  fromConstructor constructor =
-    maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< foldl step nil constructor.sigValues
+  constructorStep r c = (fromConstructor c true) <> r
+
+  fromConstructor :: forall s. DataConstructor -> Boolean -> StringBoomerang s (HCons GenericSpine s)
+  fromConstructor constructor prependConstructorName =
+    if prependConstructorName
+      then lit "/" <<< lit constructor.sigConstructor <<< bmg
+      else bmg
    where
-    ser (SProd c values) = Just values
+    bmg = maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< foldl valueStep nil constructor.sigValues
+
+    ser (SProd c values) =
+      if c == constructor.sigConstructor
+        then Just values
+        else Nothing
     ser _                = Nothing
 
     lazy :: forall a t. StringBoomerang (HCons a t) (HCons (Unit -> a) t)
     lazy = maph const (Just <<< (_ $ unit))
 
-    step r e = cons </> lazy <<< signatureToSpineBoomerang (e unit) <<< r
+    valueStep r e = cons </> lazy <<< signatureToSpineBoomerang (e unit) <<< r
 
 bob :: forall a r. (Generic a) => Proxy a -> StringBoomerang r (HCons a r)
 bob p =

@@ -32,9 +32,16 @@ instance eqPrimitivePositionalValues :: Eq PrimitivePositionalValues where
 instance showPrimitivePositionalValues :: Show PrimitivePositionalValues where
   show = gShow
 
+data UnionOfEmptyConstructors = FirstEmptyConstructor | SecondEmptyConstructor
+derive instance genericUnionOfEmptyConstructors :: Generic UnionOfEmptyConstructors
+instance eqUnionOfEmptyConstructors :: Eq UnionOfEmptyConstructors where
+  eq = gEq
+instance showUnionOfEmptyConstructors :: Show UnionOfEmptyConstructors where
+  show = gShow
+
 data UnionOfPrimitivePositionalValues =
     FirstConstructor Int Boolean Int
-  | SecondConstructor Int Boolean Int
+  | SecondConstructor Boolean
 derive instance genericUnionOfPrimitivePositionalValues :: Generic UnionOfPrimitivePositionalValues
 instance eqUnionOfPrimitivePositionalValues :: Eq UnionOfPrimitivePositionalValues where
   eq = gEq
@@ -52,8 +59,31 @@ main = runTest do
     equal (Just "/8") (serialize route obj)
     equal (Just obj) (parse route "/8")
 
-  test "gRoute handles construtor with multiple, primitive values" do
+  test "bob handles construtor with multiple, primitive values" do
     let route = bob (Proxy :: Proxy PrimitivePositionalValues)
         obj = PrimitivePositionalValues 8 true 9
     equal (Just "/8/on/9") (serialize route obj)
     equal (Just obj) (parse route "/8/on/9")
+
+  test "bob handles multiple empty constructors" do
+    let route = bob (Proxy :: Proxy UnionOfEmptyConstructors)
+        fObj = FirstEmptyConstructor
+        sObj = SecondEmptyConstructor
+
+    equal (Just fObj) (parse route "/Test.Main.FirstEmptyConstructor")
+    equal (Just sObj) (parse route "/Test.Main.SecondEmptyConstructor")
+
+    equal (Just "/Test.Main.FirstEmptyConstructor") (serialize route fObj)
+    equal (Just "/Test.Main.SecondEmptyConstructor") (serialize route sObj)
+
+  test "bob handles multiple non empty constructors" do
+    let route = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
+        fObj = FirstConstructor 8 true 9
+        sObj = SecondConstructor false
+
+    equal (Just "/Test.Main.FirstConstructor/8/on/9") (serialize route fObj)
+    equal (Just "/Test.Main.SecondConstructor/off") (serialize route sObj)
+
+    equal (Just fObj) (parse route "/Test.Main.FirstConstructor/8/on/9")
+    equal (Just sObj) (parse route "/Test.Main.SecondConstructor/off")
+
