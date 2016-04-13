@@ -2,17 +2,17 @@ module Routing.Bob where
 
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Debug.Trace (trace)
-import Data.Array as Array
 import Data.Array.Unsafe (head)
 import Data.Foldable (foldl, foldr)
 import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..),
                      GenericSpine(..), toSignature, toSpine)
 import Data.List (fromFoldable, List)
 import Data.Maybe (Maybe(..))
-import Prelude (const, id, show, unit, Unit, (<<<), (<>), (==), (<$>), ($))
-import Text.Boomerang.Combinators (cons, maph, nil, pure)
-import Text.Boomerang.HStack (HCons, hNil, HNil)
-import Text.Boomerang.String (int, lit, noneOf, StringBoomerang, string)
+import Prelude (const, show, unit, Unit, (<<<), (<>), (==), (<$>), ($))
+import Text.Boomerang.Combinators (cons, maph, nil)
+import Text.Boomerang.HStack (HCons)
+import Text.Boomerang.Prim (Boomerang)
+import Text.Boomerang.String (int, lit, StringBoomerang, string)
 import Type.Proxy (Proxy)
 
 join :: forall a b c. StringBoomerang b c -> StringBoomerang a b -> StringBoomerang a c
@@ -41,6 +41,7 @@ arrayFromList =
   -- very ineficient - will be replaced with next purescript-array release
   arrayFromFoldable = foldr Data.Array.cons []
 
+type GenericRecProp = {recLabel :: String, recValue :: Unit -> GenericSpine}
 
 signatureToSpineBoomerang :: forall r. GenericSignature -> StringBoomerang r (HCons GenericSpine r)
 signatureToSpineBoomerang SigBoolean =

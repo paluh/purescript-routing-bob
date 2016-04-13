@@ -1,6 +1,6 @@
 # purescript-routing-bob
 
-Let me introduce to you Bob The Router (he is nearly a pendulum bob) - simple (but usable) example of partial bidirectional ~~bobs~~ routes generator based on __purescript-boomerang__ and purescript generics.
+Let me introduce to you Bob The Router - simple (but usable) example of partial bidirectional ~~bobs~~ routes generator based on __purescript-boomerang__ and purescript generics.
 
 ## Installation
 
