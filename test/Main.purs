@@ -48,6 +48,23 @@ instance eqUnionOfPrimitivePositionalValues :: Eq UnionOfPrimitivePositionalValu
 instance showUnionOfPrimitivePositionalValues :: Show UnionOfPrimitivePositionalValues where
   show = gShow
 
+data NestedStructureWithPrimitivePositionvalValue =
+  NestedStructureWithPrimitivePositionvalValue PrimitivePositionalValue
+derive instance genericNestedStructureWithPrimitivePositionvalValue :: Generic NestedStructureWithPrimitivePositionvalValue
+instance eqNestedStructureWithPrimitivePositionvalValue :: Eq NestedStructureWithPrimitivePositionvalValue where
+  eq = gEq
+instance showNestedStructureWithPrimitivePositionvalValue :: Show NestedStructureWithPrimitivePositionvalValue where
+  show = gShow
+
+data NestedStructures =
+    FirstOuterConstructor UnionOfPrimitivePositionalValues
+  | SecondOuterConstructor PrimitivePositionalValues
+derive instance genericNestedStructures :: Generic NestedStructures
+instance eqNestedStructures :: Eq NestedStructures where
+  eq = gEq
+instance showNestedStructures:: Show NestedStructures where
+  show = gShow
+
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
                       , testOutput :: TESTOUTPUT | e
@@ -56,34 +73,46 @@ main = runTest do
   test "bob handles constructor with single, primitive value" do
     let route = bob (Proxy :: Proxy PrimitivePositionalValue)
         obj = PrimitivePositionalValue 8
-    equal (Just "/8") (serialize route obj)
-    equal (Just obj) (parse route "/8")
+    equal (Just "8") (serialize route obj)
+    equal (Just obj) (parse route "8")
 
   test "bob handles construtor with multiple, primitive values" do
     let route = bob (Proxy :: Proxy PrimitivePositionalValues)
         obj = PrimitivePositionalValues 8 true 9
-    equal (Just "/8/on/9") (serialize route obj)
-    equal (Just obj) (parse route "/8/on/9")
+    equal (Just "8/on/9") (serialize route obj)
+    equal (Just obj) (parse route "8/on/9")
 
   test "bob handles multiple empty constructors" do
     let route = bob (Proxy :: Proxy UnionOfEmptyConstructors)
         fObj = FirstEmptyConstructor
         sObj = SecondEmptyConstructor
 
-    equal (Just fObj) (parse route "/Test.Main.FirstEmptyConstructor")
-    equal (Just sObj) (parse route "/Test.Main.SecondEmptyConstructor")
+    equal (Just fObj) (parse route "Test.Main.FirstEmptyConstructor")
+    equal (Just sObj) (parse route "Test.Main.SecondEmptyConstructor")
 
-    equal (Just "/Test.Main.FirstEmptyConstructor") (serialize route fObj)
-    equal (Just "/Test.Main.SecondEmptyConstructor") (serialize route sObj)
+    equal (Just "Test.Main.FirstEmptyConstructor") (serialize route fObj)
+    equal (Just "Test.Main.SecondEmptyConstructor") (serialize route sObj)
 
   test "bob handles multiple non empty constructors" do
     let route = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
         fObj = FirstConstructor 8 true 9
         sObj = SecondConstructor false
 
-    equal (Just "/Test.Main.FirstConstructor/8/on/9") (serialize route fObj)
-    equal (Just "/Test.Main.SecondConstructor/off") (serialize route sObj)
+    equal (Just "Test.Main.FirstConstructor/8/on/9") (serialize route fObj)
+    equal (Just "Test.Main.SecondConstructor/off") (serialize route sObj)
 
-    equal (Just fObj) (parse route "/Test.Main.FirstConstructor/8/on/9")
-    equal (Just sObj) (parse route "/Test.Main.SecondConstructor/off")
+    equal (Just fObj) (parse route "Test.Main.FirstConstructor/8/on/9")
+    equal (Just sObj) (parse route "Test.Main.SecondConstructor/off")
+
+  test "bob handles nested structure with primitive value" do
+    let route = bob (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue)
+        obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
+    equal (Just "8") (serialize route obj)
+    equal (Just obj) (parse route "8")
+
+  test "bob handles nesteted structures with mutilple constructors" do
+    let route = bob (Proxy :: Proxy NestedStructures)
+        obj = FirstOuterConstructor (FirstConstructor 100 true 888)
+    equal (Just "Test.Main.FirstOuterConstructor/Test.Main.FirstConstructor/100/on/888") (serialize route obj)
+    equal (Just obj) (parse route "Test.Main.FirstOuterConstructor/Test.Main.FirstConstructor/100/on/888")
 

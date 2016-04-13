@@ -2,6 +2,7 @@ module Routing.Bob where
 
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Debug.Trace (trace)
+import Data.Array as Array
 import Data.Array (length)
 import Data.Array.Unsafe (head, tail)
 import Data.Foldable (foldl, foldr)
@@ -78,7 +79,6 @@ signatureToSpineBoomerang (SigRecord props) =
     recSer (SRecord props) = Just props
     recSer _               = Nothing
 signatureToSpineBoomerang s@(SigProd n cs) =
-  -- XXX: this is coorectly only for single constructor
   let constructor = (head cs)
   in
     if length cs == 1
@@ -91,10 +91,18 @@ signatureToSpineBoomerang s@(SigProd n cs) =
   fromConstructor :: forall s. DataConstructor -> Boolean -> StringBoomerang s (HCons GenericSpine s)
   fromConstructor constructor prependConstructorName =
     if prependConstructorName
-      then lit "/" <<< lit constructor.sigConstructor <<< bmg
+      then lit constructor.sigConstructor <<< bmg
       else bmg
    where
-    bmg = maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< foldl valueStep nil constructor.sigValues
+    bmg = maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< values <<< nil
+
+    values = case Array.uncons constructor.sigValues of
+      Just { head: h, tail: t } ->
+        (if prependConstructorName then lit "/" else id)
+        <<< foldl (\r e -> valueStep e </> r) (valueStep h) t
+      Nothing -> id
+     where
+      valueStep e = cons <<< lazy <<< signatureToSpineBoomerang (e unit)
 
     ser (SProd c values) =
       if c == constructor.sigConstructor
@@ -105,7 +113,6 @@ signatureToSpineBoomerang s@(SigProd n cs) =
     lazy :: forall a t. StringBoomerang (HCons a t) (HCons (Unit -> a) t)
     lazy = maph const (Just <<< (_ $ unit))
 
-    valueStep r e = cons </> lazy <<< signatureToSpineBoomerang (e unit) <<< r
 
 bob :: forall a r. (Generic a) => Proxy a -> StringBoomerang r (HCons a r)
 bob p =
