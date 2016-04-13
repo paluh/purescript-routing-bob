@@ -9,7 +9,8 @@ import Data.Foldable (foldl, foldr)
 import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..),
                      GenericSpine(..), toSignature, toSpine)
 import Data.List (fromFoldable, List)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (fromMaybe, Maybe(..))
+import Data.String (split, toLower)
 import Prelude (const, id, show, unit, Unit, (<<<), (<>), (==), (<$>), ($))
 import Text.Boomerang.Combinators (cons, maph, nil)
 import Text.Boomerang.HStack (HCons)
@@ -79,6 +80,7 @@ signatureToSpineBoomerang (SigRecord props) =
     recSer (SRecord props) = Just props
     recSer _               = Nothing
 signatureToSpineBoomerang s@(SigProd n cs) =
+  -- XXX: rewrite this ugly piece with proper failure
   let constructor = (head cs)
   in
     if length cs == 1
@@ -91,12 +93,12 @@ signatureToSpineBoomerang s@(SigProd n cs) =
   fromConstructor :: forall s. DataConstructor -> Boolean -> StringBoomerang s (HCons GenericSpine s)
   fromConstructor constructor prependConstructorName =
     if prependConstructorName
-      then lit constructor.sigConstructor <<< bmg
+      then lit (serializeConstructorName constructor.sigConstructor) <<< bmg
       else bmg
    where
-    bmg = maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< values <<< nil
+    bmg = maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< appendValues <<< nil
 
-    values = case Array.uncons constructor.sigValues of
+    appendValues = case Array.uncons constructor.sigValues of
       Just { head: h, tail: t } ->
         (if prependConstructorName then lit "/" else id)
         <<< foldl (\r e -> valueStep e </> r) (valueStep h) t
@@ -112,6 +114,9 @@ signatureToSpineBoomerang s@(SigProd n cs) =
 
     lazy :: forall a t. StringBoomerang (HCons a t) (HCons (Unit -> a) t)
     lazy = maph const (Just <<< (_ $ unit))
+
+  serializeConstructorName n =
+    fromMaybe n (Array.last (split "." <<< toLower $ n))
 
 
 bob :: forall a r. (Generic a) => Proxy a -> StringBoomerang r (HCons a r)

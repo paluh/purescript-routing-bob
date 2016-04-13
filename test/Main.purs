@@ -87,22 +87,22 @@ main = runTest do
         fObj = FirstEmptyConstructor
         sObj = SecondEmptyConstructor
 
-    equal (Just fObj) (parse route "Test.Main.FirstEmptyConstructor")
-    equal (Just sObj) (parse route "Test.Main.SecondEmptyConstructor")
+    equal (Just fObj) (parse route "firstemptyconstructor")
+    equal (Just sObj) (parse route "secondemptyconstructor")
 
-    equal (Just "Test.Main.FirstEmptyConstructor") (serialize route fObj)
-    equal (Just "Test.Main.SecondEmptyConstructor") (serialize route sObj)
+    equal (Just "firstemptyconstructor") (serialize route fObj)
+    equal (Just "secondemptyconstructor") (serialize route sObj)
 
   test "bob handles multiple non empty constructors" do
     let route = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
         fObj = FirstConstructor 8 true 9
         sObj = SecondConstructor false
 
-    equal (Just "Test.Main.FirstConstructor/8/on/9") (serialize route fObj)
-    equal (Just "Test.Main.SecondConstructor/off") (serialize route sObj)
+    equal (Just "firstconstructor/8/on/9") (serialize route fObj)
+    equal (Just "secondconstructor/off") (serialize route sObj)
 
-    equal (Just fObj) (parse route "Test.Main.FirstConstructor/8/on/9")
-    equal (Just sObj) (parse route "Test.Main.SecondConstructor/off")
+    equal (Just fObj) (parse route "firstconstructor/8/on/9")
+    equal (Just sObj) (parse route "secondconstructor/off")
 
   test "bob handles nested structure with primitive value" do
     let route = bob (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue)
@@ -113,6 +113,6 @@ main = runTest do
   test "bob handles nesteted structures with mutilple constructors" do
     let route = bob (Proxy :: Proxy NestedStructures)
         obj = FirstOuterConstructor (FirstConstructor 100 true 888)
-    equal (Just "Test.Main.FirstOuterConstructor/Test.Main.FirstConstructor/100/on/888") (serialize route obj)
-    equal (Just obj) (parse route "Test.Main.FirstOuterConstructor/Test.Main.FirstConstructor/100/on/888")
+    equal (Just "firstouterconstructor/firstconstructor/100/on/888") (serialize route obj)
+    equal (Just obj) (parse route "firstouterconstructor/firstconstructor/100/on/888")
 
