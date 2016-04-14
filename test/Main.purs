@@ -1,14 +1,16 @@
 module Test.Main where
 
+import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.AVar (AVAR)
 import Control.Monad.Eff (Eff)
 import Data.Generic (class Generic, gEq, gShow)
 import Data.Maybe (Maybe(..))
-import Prelude (bind, class Eq, class Show, Unit)
-import Test.Unit (test, runTest, TIMER)
+import Prelude -- (bind, class Eq, class Show, return, show, unit, Unit, (<>))
+import Test.Unit (failure, test, runTest, TIMER)
 import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Assert (equal)
-import Text.Boomerang.String (parse, serialize)
+import Text.Boomerang.HStack (HCons)
+import Text.Boomerang.String (parse, serialize, StringBoomerang)
 import Routing.Bob (bob)
 import Type.Proxy (Proxy(..))
 
@@ -65,54 +67,61 @@ instance eqNestedStructures :: Eq NestedStructures where
 instance showNestedStructures:: Show NestedStructures where
   show = gShow
 
+
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
                       , testOutput :: TESTOUTPUT | e
                       ) Unit
 main = runTest do
+  let
+    bob' :: forall t a e'. (Generic a) =>
+      Proxy a ->
+      (StringBoomerang t (HCons a t) -> Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit) ->
+      Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit
+    bob' p t = (case bob p of
+      Nothing -> failure ("Bob generation failed")
+      (Just b)-> t b)
   test "bob handles constructor with single, primitive value" do
-    let route = bob (Proxy :: Proxy PrimitivePositionalValue)
-        obj = PrimitivePositionalValue 8
-    equal (Just "8") (serialize route obj)
-    equal (Just obj) (parse route "8")
+    let obj = PrimitivePositionalValue 8
+    bob' (Proxy :: Proxy PrimitivePositionalValue) (\route -> do
+      equal (Just "8") (serialize route obj)
+      equal (Just obj) (parse route "8"))
 
   test "bob handles construtor with multiple, primitive values" do
-    let route = bob (Proxy :: Proxy PrimitivePositionalValues)
-        obj = PrimitivePositionalValues 8 true 9
-    equal (Just "8/on/9") (serialize route obj)
-    equal (Just obj) (parse route "8/on/9")
+    let obj = PrimitivePositionalValues 8 true 9
+    bob' (Proxy :: Proxy PrimitivePositionalValues) (\route -> do
+      equal (Just "8/on/9") (serialize route obj)
+      equal (Just obj) (parse route "8/on/9"))
 
   test "bob handles multiple empty constructors" do
-    let route = bob (Proxy :: Proxy UnionOfEmptyConstructors)
-        fObj = FirstEmptyConstructor
+    let fObj = FirstEmptyConstructor
         sObj = SecondEmptyConstructor
+    bob' (Proxy :: Proxy UnionOfEmptyConstructors) (\route -> do
+      equal (Just fObj) (parse route "firstemptyconstructor")
+      equal (Just sObj) (parse route "secondemptyconstructor")
 
-    equal (Just fObj) (parse route "firstemptyconstructor")
-    equal (Just sObj) (parse route "secondemptyconstructor")
-
-    equal (Just "firstemptyconstructor") (serialize route fObj)
-    equal (Just "secondemptyconstructor") (serialize route sObj)
+      equal (Just "firstemptyconstructor") (serialize route fObj)
+      equal (Just "secondemptyconstructor") (serialize route sObj))
 
   test "bob handles multiple non empty constructors" do
-    let route = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
-        fObj = FirstConstructor 8 true 9
+    let fObj = FirstConstructor 8 true 9
         sObj = SecondConstructor false
+    bob' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\route -> do
+      equal (Just "firstconstructor/8/on/9") (serialize route fObj)
+      equal (Just "secondconstructor/off") (serialize route sObj)
 
-    equal (Just "firstconstructor/8/on/9") (serialize route fObj)
-    equal (Just "secondconstructor/off") (serialize route sObj)
-
-    equal (Just fObj) (parse route "firstconstructor/8/on/9")
-    equal (Just sObj) (parse route "secondconstructor/off")
+      equal (Just fObj) (parse route "firstconstructor/8/on/9")
+      equal (Just sObj) (parse route "secondconstructor/off"))
 
   test "bob handles nested structure with primitive value" do
-    let route = bob (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue)
-        obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
-    equal (Just "8") (serialize route obj)
-    equal (Just obj) (parse route "8")
+    let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
+    bob' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\route -> do
+      equal (Just "8") (serialize route obj)
+      equal (Just obj) (parse route "8"))
 
   test "bob handles nesteted structures with mutilple constructors" do
-    let route = bob (Proxy :: Proxy NestedStructures)
-        obj = FirstOuterConstructor (FirstConstructor 100 true 888)
-    equal (Just "firstouterconstructor/firstconstructor/100/on/888") (serialize route obj)
-    equal (Just obj) (parse route "firstouterconstructor/firstconstructor/100/on/888")
+    let obj = FirstOuterConstructor (FirstConstructor 100 true 888)
+    bob' (Proxy :: Proxy NestedStructures) (\route -> do
+      equal (Just "firstouterconstructor/firstconstructor/100/on/888") (serialize route obj)
+      equal (Just obj) (parse route "firstouterconstructor/firstconstructor/100/on/888"))
 
