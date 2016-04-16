@@ -47,7 +47,7 @@ equal (Just "secondconstructor/off") (serialize route sObj)
 
 equal (Just fObj) (parse route "firstconstructor/8/on/9")
 
-equal (Just sObj) (parse route "secondconstructor/off"))
+equal (Just sObj) (parse route "secondconstructor/off")
 
 ```
 
