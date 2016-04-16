@@ -14,10 +14,10 @@ import Data.List (fromFoldable, List)
 import Data.Maybe (fromMaybe, Maybe(..))
 import Data.String (split, toLower)
 import Prelude (bind, const, id, map, return, show, unit, Unit, (<<<), (<>), (==), (<$>), ($), (>))
-import Text.Boomerang.Combinators (cons, maph, nil)
+import Text.Boomerang.Combinators (cons, list, maph, pure, nil)
 import Text.Boomerang.HStack (HCons)
 import Text.Boomerang.Prim (Boomerang)
-import Text.Boomerang.String (int, lit, StringBoomerang, string)
+import Text.Boomerang.String (int, lit, many1NoneOf, noneOf, StringBoomerang, string)
 import Type.Proxy (Proxy)
 
 join :: forall a b c. StringBoomerang b c -> StringBoomerang a b -> StringBoomerang a c
@@ -39,6 +39,13 @@ boolean =
     ser true  = Just "on"
     ser false = Just "off"
 
+foreign import encodeURIComponent :: String -> String
+foreign import decodeURIComponent :: String -> String
+
+str :: forall r. StringBoomerang r (HCons String r)
+str =
+  maph (decodeURIComponent) (Just <<< encodeURIComponent) <<< many1NoneOf "/?#"
+
 arrayFromList :: forall t a tok. Boomerang tok (HCons (List a) t) (HCons (Array a) t)
 arrayFromList =
   maph arrayFromFoldable (Just <<< fromFoldable)
@@ -47,7 +54,6 @@ arrayFromList =
   arrayFromFoldable = foldr Data.Array.cons []
 
 type GenericRecProp = {recLabel :: String, recValue :: Unit -> GenericSpine}
-
 
 intersperce :: forall tok a t. (List (Boomerang tok (HCons (List a) t) (HCons a (HCons (List a) t)))) ->
                                (forall r. Boomerang tok r r) ->
@@ -101,6 +107,11 @@ signatureToSpineBoomerang SigInt =
   Just (maph SInt ser <<< int)
  where
   ser (SInt b) = Just b
+  ser _        = Nothing
+signatureToSpineBoomerang SigString =
+  Just (maph SString ser <<< str)
+ where
+  ser (SString s) = Just s
   ser _        = Nothing
 signatureToSpineBoomerang _ = Nothing
 

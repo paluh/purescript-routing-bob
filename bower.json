@@ -18,7 +18,7 @@
     "output"
   ],
   "dependencies": {
-    "purescript-boomerang": "0.0.12",
+    "purescript-boomerang": "0.0.13",
     "purescript-console": "^0.1.0",
     "purescript-generics": "0.7.2",
     "purescript-strings": "0.7.1"

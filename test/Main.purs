@@ -67,6 +67,13 @@ instance eqNestedStructures :: Eq NestedStructures where
 instance showNestedStructures:: Show NestedStructures where
   show = gShow
 
+data StringValue = StringValue String
+derive instance genericStringValue :: Generic StringValue
+instance eqStringValue :: Eq StringValue where
+  eq = gEq
+instance showStringValue:: Show StringValue where
+  show = gShow
+
 
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
@@ -125,3 +132,8 @@ main = runTest do
       equal (Just "firstouterconstructor/firstconstructor/100/on/888") (serialize route obj)
       equal (Just obj) (parse route "firstouterconstructor/firstconstructor/100/on/888"))
 
+  test "bob uses correct escaping for string values" do
+    let obj = StringValue "this/is?test#string"
+    bob' (Proxy :: Proxy StringValue) (\route -> do
+      equal (Just "this%2Fis%3Ftest%23string") (serialize route obj)
+      equal (Just obj) (parse route "this%2Fis%3Ftest%23string"))
