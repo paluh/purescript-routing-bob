@@ -17,7 +17,7 @@ Currently you can generate routes only for some subset of purescript types - if 
 
 ## Usage
 
-Just to give you a hit what this library does let's copy some test here (sorry for long data types and constructor names):
+Just to give you a hit what this library does, let's copy simple test here (sorry for long data types and constructor names):
 
 ```purescript
 
@@ -26,13 +26,12 @@ data UnionOfPrimitivePositionalValues =
   | SecondConstructor Boolean
 derive instance genericUnionOfPrimitivePositionalValues :: Generic UnionOfPrimitivePositionalValues
 
--- and here is related test
+-- and related tests' lines
 
-test "bob handles multiple non empty constructors" do
   let fObj = FirstConstructor 8 true 9
-      sObj = SecondConstructor false
-  bob' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\route -> do
 
+      sObj = SecondConstructor false
+...
     equal (Just "firstconstructor/8/on/9") (serialize route fObj)
 
     equal (Just "secondconstructor/off") (serialize route sObj)
