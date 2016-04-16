@@ -11,7 +11,7 @@ import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Assert (equal)
 import Text.Boomerang.HStack (HCons)
 import Text.Boomerang.String (parse, serialize, StringBoomerang)
-import Routing.Bob (bob)
+import Routing.Bob (bob, fromUrl, toUrl)
 import Type.Proxy (Proxy(..))
 
 data BooleanIntRoute = BooleanIntRoute
@@ -119,6 +119,14 @@ main = runTest do
 
       equal (Just fObj) (parse route "firstconstructor/8/on/9")
       equal (Just sObj) (parse route "secondconstructor/off"))
+
+  test "we can avoid bob and use direct functions" do
+      equal (Just "firstconstructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
+      equal (Just "secondconstructor/off") (toUrl (SecondConstructor false))
+
+      equal (Just (FirstConstructor 8 true 9)) (fromUrl "firstconstructor/8/on/9")
+      equal (Just (SecondConstructor false)) (fromUrl "secondconstructor/off")
+
 
   test "bob handles nested structure with primitive value" do
     let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)

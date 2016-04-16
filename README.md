@@ -30,7 +30,17 @@ data UnionOfPrimitivePositionalValues =
   | SecondConstructor Boolean
 derive instance genericUnionOfPrimitivePositionalValues :: Generic UnionOfPrimitivePositionalValues
 
+
 -- and related tests' lines
+
+equal (Just "firstconstructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
+equal (Just "secondconstructor/off") (toUrl (SecondConstructor false))
+
+equal (Just (FirstConstructor 8 true 9)) (fromUrl "firstconstructor/8/on/9")
+equal (Just (SecondConstructor false)) (fromUrl "secondconstructor/off")
+
+
+-- below more realistic and faster implementation with pregenerated router
 
 let fObj = FirstConstructor 8 true 9
 

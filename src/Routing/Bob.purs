@@ -17,8 +17,9 @@ import Prelude (bind, const, id, map, return, show, unit, Unit, (<<<), (<>), (==
 import Text.Boomerang.Combinators (cons, list, maph, pure, nil)
 import Text.Boomerang.HStack (HCons)
 import Text.Boomerang.Prim (Boomerang)
-import Text.Boomerang.String (int, lit, many1NoneOf, noneOf, StringBoomerang, string)
-import Type.Proxy (Proxy)
+import Text.Boomerang.String (int, lit, many1NoneOf, noneOf, parse,
+                              StringBoomerang, serialize, string)
+import Type.Proxy (Proxy(..))
 
 join :: forall a b c. StringBoomerang b c -> StringBoomerang a b -> StringBoomerang a c
 join b1 b2 = b1 <<< lit "/" <<< b2
@@ -123,3 +124,14 @@ bob p = do
   prs (Just s) = s
   prs Nothing = unsafeThrow ("Incorrect spine generated for signature: " <> show (toSignature p))
 
+-- Please use pregenerated route if you care about speed:
+
+toUrl :: forall a. (Generic a) => a -> Maybe String
+toUrl a = do
+  route <- bob (Proxy :: Proxy a)
+  serialize route a
+
+fromUrl :: forall a. (Generic a) => String -> Maybe a
+fromUrl s = do
+  route <- bob (Proxy :: Proxy a)
+  parse route s
