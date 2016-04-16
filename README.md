@@ -17,4 +17,30 @@ Currently you can generate routes only for some subset of purescript types - if 
 
 ## Usage
 
-Comming soon... You can check `test/Main.purs` if you are in hurry :-P
+Just to give you a hit what this library does let's copy some test here (sorry for long data types and constructor names):
+
+```purescript
+
+data UnionOfPrimitivePositionalValues =
+    FirstConstructor Int Boolean Int
+  | SecondConstructor Boolean
+derive instance genericUnionOfPrimitivePositionalValues :: Generic UnionOfPrimitivePositionalValues
+
+-- and here is related test
+
+test "bob handles multiple non empty constructors" do
+  let fObj = FirstConstructor 8 true 9
+      sObj = SecondConstructor false
+  bob' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\route -> do
+
+    equal (Just "firstconstructor/8/on/9") (serialize route fObj)
+
+    equal (Just "secondconstructor/off") (serialize route sObj)
+
+    equal (Just fObj) (parse route "firstconstructor/8/on/9")
+
+    equal (Just sObj) (parse route "secondconstructor/off"))
+
+```
+
+You can check `test/Main.purs` for more examples... real docs comming soon ;-)
