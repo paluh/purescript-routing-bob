@@ -20,6 +20,10 @@ Currently you can generate routes only for some subset of purescript types - if 
 Just to give you a hit what this library does, let's copy simple test here (sorry for long data types and constructor names):
 
 ```purescript
+import Data.Generic (class Generic)
+import Routing.Bob (bob)
+import Type.Proxy (Proxy(..))
+
 
 data UnionOfPrimitivePositionalValues =
     FirstConstructor Int Boolean Int
@@ -28,17 +32,22 @@ derive instance genericUnionOfPrimitivePositionalValues :: Generic UnionOfPrimit
 
 -- and related tests' lines
 
-  let fObj = FirstConstructor 8 true 9
+let fObj = FirstConstructor 8 true 9
 
-      sObj = SecondConstructor false
-...
-    equal (Just "firstconstructor/8/on/9") (serialize route fObj)
+    sObj = SecondConstructor false
 
-    equal (Just "secondconstructor/off") (serialize route sObj)
+    -- generting route from type
+    maybeRoute = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
 
-    equal (Just fObj) (parse route "firstconstructor/8/on/9")
+-- later we can use this `route` for url generation and url parsing:
 
-    equal (Just sObj) (parse route "secondconstructor/off"))
+equal (Just "firstconstructor/8/on/9") (serialize route fObj)
+
+equal (Just "secondconstructor/off") (serialize route sObj)
+
+equal (Just fObj) (parse route "firstconstructor/8/on/9")
+
+equal (Just sObj) (parse route "secondconstructor/off"))
 
 ```
 
