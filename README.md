@@ -78,6 +78,12 @@ Just to give you a hit what this library does, let's copy some tests' fragments 
 
     equal (Just "first-outer-constructor/first-constructor/100/on/888") (tUrl obj)
     equal (Just obj) (fromUrl "first-outer-constructor/first-constructor/100/on/888"))
+
+    -- in case of single constructor (`PrimitivePositionalValues` is type with single one),
+    -- constructor name is omited in encoded url
+    equal (Just "second-outer-constructor/8/off/100") (serialize route sObj)
+    equal (Just sObj) (parse route "second-outer-constructor/8/off/100"))
+
     ```
 
 

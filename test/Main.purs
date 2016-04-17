@@ -135,10 +135,15 @@ main = runTest do
       equal (Just obj) (parse route "8"))
 
   test "bob handles nesteted structures with mutilple constructors" do
-    let obj = FirstOuterConstructor (FirstConstructor 100 true 888)
+    let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
+        sObj = SecondOuterConstructor (PrimitivePositionalValues 8 false 100)
+
     bob' (Proxy :: Proxy NestedStructures) (\route -> do
-      equal (Just "first-outer-constructor/first-constructor/100/on/888") (serialize route obj)
-      equal (Just obj) (parse route "first-outer-constructor/first-constructor/100/on/888"))
+      equal (Just "first-outer-constructor/first-constructor/100/on/888") (serialize route fObj)
+      equal (Just fObj) (parse route "first-outer-constructor/first-constructor/100/on/888")
+
+      equal (Just "second-outer-constructor/8/off/100") (serialize route sObj)
+      equal (Just sObj) (parse route "second-outer-constructor/8/off/100"))
 
   test "bob uses correct escaping for string values" do
     let obj = StringValue "this/is?test#string"
