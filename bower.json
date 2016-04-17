@@ -21,7 +21,8 @@
     "purescript-boomerang": "0.0.13",
     "purescript-console": "^0.1.0",
     "purescript-generics": "0.7.2",
-    "purescript-strings": "0.7.1"
+    "purescript-strings": "0.7.1",
+    "purescript-unicode": "0.0.1"
   },
   "devDependencies": {
     "purescript-debug": "^0.1.3",

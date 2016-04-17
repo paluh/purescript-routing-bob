@@ -42,6 +42,7 @@ boolean =
 
 foreign import encodeURIComponent :: String -> String
 foreign import decodeURIComponent :: String -> String
+foreign import camelsToHyphens :: String -> String
 
 str :: forall r. StringBoomerang r (HCons String r)
 str =
@@ -97,7 +98,7 @@ signatureToSpineBoomerang s@(SigProd n cs) = do
     ser _                = Nothing
 
     serializeConstructorName n =
-      fromMaybe n (Array.last (split "." <<< toLower $ n))
+      camelsToHyphens (fromMaybe n (Array.last <<< split "." $ n))
 
 signatureToSpineBoomerang SigBoolean =
   Just (maph SBoolean ser <<< boolean)

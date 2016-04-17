@@ -104,28 +104,28 @@ main = runTest do
     let fObj = FirstEmptyConstructor
         sObj = SecondEmptyConstructor
     bob' (Proxy :: Proxy UnionOfEmptyConstructors) (\route -> do
-      equal (Just fObj) (parse route "firstemptyconstructor")
-      equal (Just sObj) (parse route "secondemptyconstructor")
+      equal (Just "first-empty-constructor") (serialize route fObj)
+      equal (Just fObj) (parse route "first-empty-constructor")
+      equal (Just sObj) (parse route "second-empty-constructor")
 
-      equal (Just "firstemptyconstructor") (serialize route fObj)
-      equal (Just "secondemptyconstructor") (serialize route sObj))
+      equal (Just "second-empty-constructor") (serialize route sObj))
 
   test "bob handles multiple non empty constructors" do
     let fObj = FirstConstructor 8 true 9
         sObj = SecondConstructor false
     bob' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\route -> do
-      equal (Just "firstconstructor/8/on/9") (serialize route fObj)
-      equal (Just "secondconstructor/off") (serialize route sObj)
+      equal (Just "first-constructor/8/on/9") (serialize route fObj)
+      equal (Just "second-constructor/off") (serialize route sObj)
 
-      equal (Just fObj) (parse route "firstconstructor/8/on/9")
-      equal (Just sObj) (parse route "secondconstructor/off"))
+      equal (Just fObj) (parse route "first-constructor/8/on/9")
+      equal (Just sObj) (parse route "second-constructor/off"))
 
   test "we can avoid bob and use direct functions" do
-      equal (Just "firstconstructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
-      equal (Just "secondconstructor/off") (toUrl (SecondConstructor false))
+      equal (Just "first-constructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
+      equal (Just "second-constructor/off") (toUrl (SecondConstructor false))
 
-      equal (Just (FirstConstructor 8 true 9)) (fromUrl "firstconstructor/8/on/9")
-      equal (Just (SecondConstructor false)) (fromUrl "secondconstructor/off")
+      equal (Just (FirstConstructor 8 true 9)) (fromUrl "first-constructor/8/on/9")
+      equal (Just (SecondConstructor false)) (fromUrl "second-constructor/off")
 
 
   test "bob handles nested structure with primitive value" do
@@ -137,8 +137,8 @@ main = runTest do
   test "bob handles nesteted structures with mutilple constructors" do
     let obj = FirstOuterConstructor (FirstConstructor 100 true 888)
     bob' (Proxy :: Proxy NestedStructures) (\route -> do
-      equal (Just "firstouterconstructor/firstconstructor/100/on/888") (serialize route obj)
-      equal (Just obj) (parse route "firstouterconstructor/firstconstructor/100/on/888"))
+      equal (Just "first-outer-constructor/first-constructor/100/on/888") (serialize route obj)
+      equal (Just obj) (parse route "first-outer-constructor/first-constructor/100/on/888"))
 
   test "bob uses correct escaping for string values" do
     let obj = StringValue "this/is?test#string"
