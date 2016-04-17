@@ -19,7 +19,7 @@ Currently you can generate routes only for some subset of purescript types - if 
 
 Just to give you a hit what this library does, let's copy some tests' fragments here (sorry for long data types and constructor names):
 
-    * simple, union type:
+  * simple, union type:
 
         ```purescript
         import Data.Generic (class Generic)
@@ -62,7 +62,7 @@ Just to give you a hit what this library does, let's copy some tests' fragments 
 
         ```
 
-    * netsted data type:
+  * netsted data type:
 
         ```purescript
         data PrimitivePositionalValues = PrimitivePositionalValues Int Boolean Int
