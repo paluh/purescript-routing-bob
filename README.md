@@ -21,64 +21,64 @@ Just to give you a hit what this library does, let's copy some tests' fragments 
 
   * simple, union type:
 
-        ```purescript
-        import Data.Generic (class Generic)
-        import Routing.Bob (bob)
-        import Type.Proxy (Proxy(..))
+    ```purescript
+    import Data.Generic (class Generic)
+    import Routing.Bob (bob)
+    import Type.Proxy (Proxy(..))
 
 
-        data UnionOfPrimitivePositionalValues =
-            FirstConstructor Int Boolean Int
-          | SecondConstructor Boolean
-        derive instance genericUnionOfPrimitivePositionalValues :: Generic UnionOfPrimitivePositionalValues
+    data UnionOfPrimitivePositionalValues =
+        FirstConstructor Int Boolean Int
+      | SecondConstructor Boolean
+    derive instance genericUnionOfPrimitivePositionalValues :: Generic UnionOfPrimitivePositionalValues
 
 
-        -- and related tests' lines
+    -- and related tests' lines
 
-        equal (Just "first-constructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
-        equal (Just "second-constructor/off") (toUrl (SecondConstructor false))
+    equal (Just "first-constructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
+    equal (Just "second-constructor/off") (toUrl (SecondConstructor false))
 
-        equal (Just (FirstConstructor 8 true 9)) (fromUrl "first-constructor/8/on/9")
-        equal (Just (SecondConstructor false)) (fromUrl "second-constructor/off")
+    equal (Just (FirstConstructor 8 true 9)) (fromUrl "first-constructor/8/on/9")
+    equal (Just (SecondConstructor false)) (fromUrl "second-constructor/off")
 
 
-        -- below more realistic and faster implementation with pregenerated router
+    -- below more realistic and faster implementation with pregenerated router
 
-        let fObj = FirstConstructor 8 true 9
+    let fObj = FirstConstructor 8 true 9
 
-            sObj = SecondConstructor false
+        sObj = SecondConstructor false
 
-            -- generting route for given type type:
+        -- generting route for given type type:
 
-            maybeRoute = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
+        maybeRoute = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
 
-        -- later we can use this `route` for url generation and url parsing:
+    -- later we can use this `route` for url generation and url parsing:
 
-        equal (Just "first-constructor/8/on/9") (serialize route fObj)
-        equal (Just "second-constructor/off") (serialize route sObj)
+    equal (Just "first-constructor/8/on/9") (serialize route fObj)
+    equal (Just "second-constructor/off") (serialize route sObj)
 
-        equal (Just fObj) (parse route "first-constructor/8/on/9")
-        equal (Just sObj) (parse route "second-constructor/off")
+    equal (Just fObj) (parse route "first-constructor/8/on/9")
+    equal (Just sObj) (parse route "second-constructor/off")
 
-        ```
+    ```
 
   * netsted data type:
 
-        ```purescript
-        data PrimitivePositionalValues = PrimitivePositionalValues Int Boolean Int
-        derive instance genericPrimitivePositionalValues :: Generic PrimitivePositionalValues
+    ```purescript
+    data PrimitivePositionalValues = PrimitivePositionalValues Int Boolean Int
+    derive instance genericPrimitivePositionalValues :: Generic PrimitivePositionalValues
 
-        data NestedStructures =
-            FirstOuterConstructor UnionOfPrimitivePositionalValues
-          | SecondOuterConstructor PrimitivePositionalValues
-        derive instance genericNestedStructures :: Generic NestedStructures
+    data NestedStructures =
+        FirstOuterConstructor UnionOfPrimitivePositionalValues
+      | SecondOuterConstructor PrimitivePositionalValues
+    derive instance genericNestedStructures :: Generic NestedStructures
 
 
-        let obj = FirstOuterConstructor (FirstConstructor 100 true 888)
+    let obj = FirstOuterConstructor (FirstConstructor 100 true 888)
 
-        equal (Just "first-outer-constructor/first-constructor/100/on/888") (tUrl obj)
-        equal (Just obj) (fromUrl "first-outer-constructor/first-constructor/100/on/888"))
-        ```
+    equal (Just "first-outer-constructor/first-constructor/100/on/888") (tUrl obj)
+    equal (Just obj) (fromUrl "first-outer-constructor/first-constructor/100/on/888"))
+    ```
 
 
 You can check `test/Main.purs` for more examples... real docs comming soon ;-)
