@@ -33,11 +33,11 @@ derive instance genericUnionOfPrimitivePositionalValues :: Generic UnionOfPrimit
 
 -- and related tests' lines
 
-equal (Just "firstconstructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
-equal (Just "secondconstructor/off") (toUrl (SecondConstructor false))
+equal (Just "first-constructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
+equal (Just "second-constructor/off") (toUrl (SecondConstructor false))
 
-equal (Just (FirstConstructor 8 true 9)) (fromUrl "firstconstructor/8/on/9")
-equal (Just (SecondConstructor false)) (fromUrl "secondconstructor/off")
+equal (Just (FirstConstructor 8 true 9)) (fromUrl "first-constructor/8/on/9")
+equal (Just (SecondConstructor false)) (fromUrl "second-constructor/off")
 
 
 -- below more realistic and faster implementation with pregenerated router
@@ -46,18 +46,17 @@ let fObj = FirstConstructor 8 true 9
 
     sObj = SecondConstructor false
 
-    -- generting route from type
+    -- generting route for given type type:
+
     maybeRoute = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
 
 -- later we can use this `route` for url generation and url parsing:
 
-equal (Just "firstconstructor/8/on/9") (serialize route fObj)
+equal (Just "first-constructor/8/on/9") (serialize route fObj)
+equal (Just "second-constructor/off") (serialize route sObj)
 
-equal (Just "secondconstructor/off") (serialize route sObj)
-
-equal (Just fObj) (parse route "firstconstructor/8/on/9")
-
-equal (Just sObj) (parse route "secondconstructor/off")
+equal (Just fObj) (parse route "first-constructor/8/on/9")
+equal (Just sObj) (parse route "second-constructor/off")
 
 ```
 
