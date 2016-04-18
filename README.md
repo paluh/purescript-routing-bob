@@ -17,7 +17,7 @@ Currently you can generate routes only for some subset of purescript types - if 
 
 ## Usage
 
-Just to give you a hint what this library does, let's copy some tests' fragments here (sorry for long data types and constructor names):
+Just to give you a hint what this library does, let's copy some tests' fragments (sorry for long data types and constructor names):
 
   * simple, union type:
 
