@@ -1,7 +1,6 @@
 module Routing.Bob where
 
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
-import Debug.Trace (trace)
 import Data.Array as Array
 import Data.Array (length)
 import Data.Array.Unsafe (head, tail)
