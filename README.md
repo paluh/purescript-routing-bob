@@ -74,12 +74,13 @@ Just to give you a hit what this library does, let's copy some tests' fragments 
     derive instance genericNestedStructures :: Generic NestedStructures
 
 
-    let obj = FirstOuterConstructor (FirstConstructor 100 true 888)
+    let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
 
-    equal (Just "first-outer-constructor/first-constructor/100/on/888") (tUrl obj)
-    equal (Just obj) (fromUrl "first-outer-constructor/first-constructor/100/on/888"))
+    equal (Just "first-outer-constructor/first-constructor/100/on/888") (tUrl fObj)
+    equal (Just fObj) (fromUrl "first-outer-constructor/first-constructor/100/on/888"))
 
-    -- in case of single constructor (`PrimitivePositionalValues` is type with single one),
+    let sObj = SecondOuterConstructor (PrimitivePositionalValues 8 false 100)
+    -- in case of single constructor (`PrimitivePositionalValues` has one),
     -- constructor name is omited in encoded url
     equal (Just "second-outer-constructor/8/off/100") (serialize route sObj)
     equal (Just sObj) (parse route "second-outer-constructor/8/off/100"))
