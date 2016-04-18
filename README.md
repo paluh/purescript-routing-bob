@@ -1,6 +1,6 @@
 # purescript-routing-bob
 
-Let me introduce to you Bob The Router - simple (but usable) example of partial bidirectional ~~bobs~~ routes generator based on __purescript-boomerang__ and purescript generics. Bob is dirty and fast like quick hack or implementation prototype ;-)
+Let me introduce to you Bob The Router - simple (but usable) example of partial bidirectional ~~bobs~~ routes generator based on __purescript-boomerang__ and __purescript-generics__. Bob is dirty and fast like quick hack or implementation prototype ;-)
 
 ## Installation
 
@@ -17,7 +17,7 @@ Currently you can generate routes only for some subset of purescript types - if 
 
 ## Usage
 
-Just to give you a hit what this library does, let's copy some tests' fragments here (sorry for long data types and constructor names):
+Just to give you a hint what this library does, let's copy some tests' fragments here (sorry for long data types and constructor names):
 
   * simple, union type:
 
@@ -87,7 +87,4 @@ Just to give you a hit what this library does, let's copy some tests' fragments 
 
     ```
 
-
 You can check `test/Main.purs` for more examples... real docs comming soon ;-)
-
-
