@@ -94,6 +94,11 @@ main = runTest do
       equal (Just "8") (serialize route obj)
       equal (Just obj) (parse route "8"))
 
+  test "bob parses whole input" do
+    let obj = PrimitivePositionalValue 8
+    bob' (Proxy :: Proxy PrimitivePositionalValue) (\route -> do
+      equal (Nothing) (parse route "8/something-more"))
+
   test "bob handles construtor with multiple, primitive values" do
     let obj = PrimitivePositionalValues 8 true 9
     bob' (Proxy :: Proxy PrimitivePositionalValues) (\route -> do
