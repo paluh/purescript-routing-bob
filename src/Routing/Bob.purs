@@ -76,6 +76,7 @@ signatureToSpineBoomerang s@(SigProd n cs) = do
       hs <- fromConstructor h true
       Array.foldM (\r c -> (_ <> r) <$> (fromConstructor c true)) hs t
  where
+  fromConstructor :: DataConstructor -> Boolean -> Maybe (StringBoomerang r (HCons GenericSpine r))
   fromConstructor constructor prependWithConstructorName = do
     let values = map (_ $ unit) constructor.sigValues
     valuesSpines <- Array.foldM (\r e -> (\b -> (lazy <<< b) : r) <$> signatureToSpineBoomerang e) Nil values
