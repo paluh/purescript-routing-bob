@@ -87,4 +87,4 @@ Just to give you a hint what this library does, let's copy some tests' fragments
 
     ```
 
-You can check `test/Main.purs` for more examples... real docs comming soon ;-)
+You can check `test/Main.purs` for more examples... real docs comming soooooon ;-)
