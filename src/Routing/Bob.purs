@@ -1,9 +1,8 @@
 module Routing.Bob where
 
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
-import Data.Array as Array
+import Data.Array as Data.Array
 import Data.Array (length)
-import Data.Array.Unsafe (head, tail)
 import Data.List as List
 import Data.List (List(..), (:))
 import Data.Foldable (foldl, foldr)
@@ -12,8 +11,8 @@ import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature
 import Data.List (fromFoldable, List)
 import Data.Maybe (fromMaybe, Maybe(..))
 import Data.String (split, toLower)
-import Prelude (bind, const, id, map, return, show, unit, Unit, (<<<), (<>), (==), (<$>), ($), (>))
-import Text.Boomerang.Combinators (cons, list, maph, pure, nil)
+import Prelude (bind, const, id, map, pure, show, unit, Unit, (<<<), (<>), (==), (<$>), ($), (>))
+import Text.Boomerang.Combinators (cons, list, maph, nil)
 import Text.Boomerang.HStack (HCons)
 import Text.Boomerang.Prim (Boomerang)
 import Text.Boomerang.String (int, lit, many1NoneOf, noneOf, parse,
@@ -67,26 +66,26 @@ intersperce (Cons b t) sep =
 
 signatureToSpineBoomerang :: forall r. GenericSignature -> Maybe (StringBoomerang r (HCons GenericSpine r))
 signatureToSpineBoomerang s@(SigProd n cs) = do
-  { head : h, tail: t} <- Array.uncons cs
+  { head : h, tail: t} <- Data.Array.uncons cs
   if length t == 0
     then
       fromConstructor h false
     else do
       hs <- fromConstructor h true
-      Array.foldM (\r c -> (_ <> r) <$> (fromConstructor c true)) hs t
+      Data.Array.foldM (\r c -> (_ <> r) <$> (fromConstructor c true)) hs t
  where
   fromConstructor :: DataConstructor -> Boolean -> Maybe (StringBoomerang r (HCons GenericSpine r))
   fromConstructor constructor prependWithConstructorName = do
     let values = map (_ $ unit) constructor.sigValues
-    valuesSpines <- Array.foldM (\r e -> (\b -> (lazy <<< b) : r) <$> signatureToSpineBoomerang e) Nil values
+    valuesSpines <- Data.Array.foldM (\r e -> (\b -> (lazy <<< b) : r) <$> signatureToSpineBoomerang e) Nil values
     let bmg = maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< intersperce valuesSpines (lit "/")
     if prependWithConstructorName
       then do
         let cn = serializeConstructorName constructor.sigConstructor
         if length values == 0
-          then return (lit cn <<< bmg)
-          else return (lit cn </> bmg)
-      else return bmg
+          then pure (lit cn <<< bmg)
+          else pure (lit cn </> bmg)
+      else pure bmg
    where
     lazy :: forall z y. StringBoomerang (HCons y z) (HCons (Unit -> y) z)
     lazy = maph const (Just <<< (_ $ unit))
@@ -96,9 +95,6 @@ signatureToSpineBoomerang s@(SigProd n cs) = do
         then Just values
         else Nothing
     ser _                = Nothing
-
-    serializeConstructorName n =
-      camelsToHyphens (fromMaybe n (Array.last <<< split "." $ n))
 
 signatureToSpineBoomerang SigBoolean =
   Just (maph SBoolean ser <<< boolean)
@@ -120,10 +116,32 @@ signatureToSpineBoomerang _ = Nothing
 bob :: forall a r. (Generic a) => Proxy a -> Maybe (StringBoomerang r (HCons a r))
 bob p = do
   sb <- (signatureToSpineBoomerang (toSignature p))
-  return (maph prs (\v -> Just (Just v)) <<< maph fromSpine (toSpine <$> _) <<< sb)
+  pure (maph prs (\v -> Just (Just v)) <<< maph fromSpine (toSpine <$> _) <<< sb)
  where
   prs (Just s) = s
   prs Nothing = unsafeThrow ("Incorrect spine generated for signature: " <> show (toSignature p))
+
+type Options a =
+  { root :: Maybe a
+  , notFound :: Maybe a
+  , constructorNameSerializer :: Maybe (String -> String)
+  }
+
+serializeConstructorName :: String -> String
+serializeConstructorName n =
+  camelsToHyphens (fromMaybe n (Data.Array.last <<< split "." $ n))
+
+-- defaults =
+--   { root : Nothing -- value/constructor (without attributes)
+--                     -- which should encode root path /
+--   , notFound : Nothing -- value/constructor (wihtout attributes)
+--                         -- which will match umatched paths
+--   , constructorNameSerializer : Just serializeConstructorName
+--   }
+-- 
+-- bob' :: forall a r. Generic a => Proxy a -> Options -> Maybe (StringBoomerang r (HCons a r))
+-- bob' proxy opts =
+--   bob proxy
 
 -- Please use pregenerated route if you care about speed:
 

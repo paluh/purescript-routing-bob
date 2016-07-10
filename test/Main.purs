@@ -1,17 +1,19 @@
 module Test.Main where
 
+import Prelude
 import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.AVar (AVAR)
 import Control.Monad.Eff (Eff)
+import Control.Monad.Eff.Console (CONSOLE)
 import Data.Generic (class Generic, gEq, gShow)
 import Data.Maybe (Maybe(..))
-import Prelude -- (bind, class Eq, class Show, return, show, unit, Unit, (<>))
-import Test.Unit (failure, test, runTest, TIMER)
-import Test.Unit.Console (TESTOUTPUT)
+import Routing.Bob (bob, fromUrl, toUrl)
+import Test.Unit (suite, failure, test, TIMER)
 import Test.Unit.Assert (equal)
+import Test.Unit.Console (TESTOUTPUT)
+import Test.Unit.Main (runTest)
 import Text.Boomerang.HStack (HCons)
 import Text.Boomerang.String (parse, serialize, StringBoomerang)
-import Routing.Bob (bob, fromUrl, toUrl)
 import Type.Proxy (Proxy(..))
 
 data BooleanIntRoute = BooleanIntRoute
@@ -77,9 +79,10 @@ instance showStringValue:: Show StringValue where
 
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
+                      , console :: CONSOLE
                       , testOutput :: TESTOUTPUT | e
                       ) Unit
-main = runTest do
+main = runTest $ suite "Test" do
   let
     bob' :: forall t a e'. (Generic a) =>
       Proxy a ->

@@ -1,6 +1,8 @@
 # purescript-routing-bob
 
-Let me introduce to you Bob The Router - simple (but usable) example of partial bidirectional ~~bobs~~ routes generator based on __purescript-boomerang__ and __purescript-generics__. Bob is dirty and fast like quick hack or implementation prototype ;-)
+Let me introduce to you Bob The Router (known also as "Pendulum Bob") - simple (but usable) example of partial bidirectional ~~bobs~~ routes generator based on __purescript-boomerang__ and __purescript-generics__.
+
+ Bob is dirty and fast like quick hack or implementation prototype ;-)
 
 ## Installation
 
@@ -10,7 +12,7 @@ bower install purescript-routing-bob
 
 ## Limitations
 
-It is called `bob`, because it contains arbitrary, nonconfigurable and partial routes generators based on `Generic` instances.
+It is called `Just bob`, because it contains arbitrary, nonconfigurable and partial routes generators based on `Generic` instances.
 When it will grow up maybe it will became `purescript-boomerang-routing`.
 
 Currently you can generate routes only for some subset of purescript types - if you want extend this set and have proposition how to encode others I'm really open to merge pull requests.
