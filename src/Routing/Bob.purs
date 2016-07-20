@@ -1,22 +1,21 @@
 module Routing.Bob where
 
-import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Data.Array as Data.Array
-import Data.Array (length)
 import Data.List as List
+import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
+import Data.Array (length)
+import Data.Foldable (foldr)
+import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..), GenericSpine(..), toSignature, toSpine)
 import Data.List (List(..), (:))
-import Data.Foldable (foldl, foldr)
-import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..),
-                     GenericSpine(..), toSignature, toSpine)
 import Data.List (fromFoldable, List)
 import Data.Maybe (fromMaybe, Maybe(..))
 import Data.String (split, toLower)
+import Partial.Unsafe (unsafePartial)
 import Prelude (bind, const, id, map, pure, show, unit, Unit, (<<<), (<>), (==), (<$>), ($), (>))
 import Text.Boomerang.Combinators (cons, list, maph, nil)
-import Text.Boomerang.HStack (HCons)
+import Text.Boomerang.HStack (HNil(HNil), HCons)
 import Text.Boomerang.Prim (Boomerang)
-import Text.Boomerang.String (int, lit, many1NoneOf, noneOf, parse,
-                              StringBoomerang, serialize, string)
+import Text.Boomerang.String (int, lit, many1NoneOf, noneOf, parse, StringBoomerang, serialize, string)
 import Type.Proxy (Proxy(..))
 
 join :: forall a b c. StringBoomerang b c -> StringBoomerang a b -> StringBoomerang a c
@@ -52,8 +51,6 @@ arrayFromList =
  where
   -- very ineficient - will be replaced with next purescript-array release
   arrayFromFoldable = foldr Data.Array.cons []
-
-type GenericRecProp = {recLabel :: String, recValue :: Unit -> GenericSpine}
 
 intersperce :: forall tok a t. (List (Boomerang tok (HCons (List a) t) (HCons a (HCons (List a) t)))) ->
                                (forall r. Boomerang tok r r) ->
@@ -95,7 +92,6 @@ signatureToSpineBoomerang s@(SigProd n cs) = do
         then Just values
         else Nothing
     ser _                = Nothing
-
 signatureToSpineBoomerang SigBoolean =
   Just (maph SBoolean ser <<< boolean)
  where
@@ -121,36 +117,31 @@ bob p = do
   prs (Just s) = s
   prs Nothing = unsafeThrow ("Incorrect spine generated for signature: " <> show (toSignature p))
 
-type Options a =
-  { root :: Maybe a
-  , notFound :: Maybe a
-  , constructorNameSerializer :: Maybe (String -> String)
-  }
-
 serializeConstructorName :: String -> String
 serializeConstructorName n =
   camelsToHyphens (fromMaybe n (Data.Array.last <<< split "." $ n))
 
--- defaults =
---   { root : Nothing -- value/constructor (without attributes)
---                     -- which should encode root path /
---   , notFound : Nothing -- value/constructor (wihtout attributes)
---                         -- which will match umatched paths
---   , constructorNameSerializer : Just serializeConstructorName
---   }
--- 
--- bob' :: forall a r. Generic a => Proxy a -> Options -> Maybe (StringBoomerang r (HCons a r))
--- bob' proxy opts =
---   bob proxy
-
--- Please use pregenerated route if you care about speed:
-
-toUrl :: forall a. (Generic a) => a -> Maybe String
-toUrl a = do
+genericToUrl :: forall a. (Generic a) => a -> Maybe String
+genericToUrl a = do
   route <- bob (Proxy :: Proxy a)
   serialize route a
 
-fromUrl :: forall a. (Generic a) => String -> Maybe a
-fromUrl s = do
+genericFromUrl :: forall a. (Generic a) => String -> Maybe a
+genericFromUrl s = do
   route <- bob (Proxy :: Proxy a)
   parse route s
+
+data Router a = Router (StringBoomerang HNil (HCons a HNil))
+
+router :: forall a. (Generic a) => Proxy a -> Maybe (Router a)
+router p = do
+  b <- bob p
+  pure $ Router b
+
+toUrl :: forall a. Router a -> a -> String
+toUrl (Router bmg) a =
+  unsafePartial (case serialize bmg a of Just url -> url)
+
+fromUrl :: forall a. Router a -> String -> Maybe a
+fromUrl (Router bmg) s =
+  parse bmg s

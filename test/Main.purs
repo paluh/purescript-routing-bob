@@ -7,13 +7,11 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Data.Generic (class Generic, gEq, gShow)
 import Data.Maybe (Maybe(..))
-import Routing.Bob (bob, fromUrl, toUrl)
+import Routing.Bob (Router, fromUrl, toUrl, genericFromUrl, genericToUrl, router)
 import Test.Unit (suite, failure, test, TIMER)
 import Test.Unit.Assert (equal)
 import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Main (runTest)
-import Text.Boomerang.HStack (HCons)
-import Text.Boomerang.String (parse, serialize, StringBoomerang)
 import Type.Proxy (Proxy(..))
 
 data BooleanIntRoute = BooleanIntRoute
@@ -84,77 +82,78 @@ main :: forall e. Eff ( timer :: TIMER
                       ) Unit
 main = runTest $ suite "Test" do
   let
-    bob' :: forall t a e'. (Generic a) =>
+    router' :: forall a e'. (Generic a) =>
       Proxy a ->
-      (StringBoomerang t (HCons a t) -> Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit) ->
+      (Router a -> Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit) ->
       Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit
-    bob' p t = (case bob p of
-      Nothing -> failure ("Bob generation failed")
+    router' p t = (case router p of
+      Nothing -> failure ("Router generation failed")
       (Just b)-> t b)
-  test "bob handles constructor with single, primitive value" do
-    let obj = PrimitivePositionalValue 8
-    bob' (Proxy :: Proxy PrimitivePositionalValue) (\route -> do
-      equal (Just "8") (serialize route obj)
-      equal (Just obj) (parse route "8"))
 
-  test "bob parses whole input" do
+  test "router handles constructor with single, primitive value" do
     let obj = PrimitivePositionalValue 8
-    bob' (Proxy :: Proxy PrimitivePositionalValue) (\route -> do
-      equal (Nothing) (parse route "8/something-more"))
+    router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
+      equal ("8") (toUrl r obj)
+      equal (Just obj) (fromUrl r "8"))
 
-  test "bob handles construtor with multiple, primitive values" do
+  test "router parses whole input" do
+    let obj = PrimitivePositionalValue 8
+    router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
+      equal (Nothing) (fromUrl r "8/something-more"))
+
+  test "router handles construtor with multiple, primitive values" do
     let obj = PrimitivePositionalValues 8 true 9
-    bob' (Proxy :: Proxy PrimitivePositionalValues) (\route -> do
-      equal (Just "8/on/9") (serialize route obj)
-      equal (Just obj) (parse route "8/on/9"))
+    router' (Proxy :: Proxy PrimitivePositionalValues) (\r -> do
+      equal ("8/on/9") (toUrl r obj)
+      equal (Just obj) (fromUrl r "8/on/9"))
 
   test "bob handles multiple empty constructors" do
     let fObj = FirstEmptyConstructor
         sObj = SecondEmptyConstructor
-    bob' (Proxy :: Proxy UnionOfEmptyConstructors) (\route -> do
-      equal (Just "first-empty-constructor") (serialize route fObj)
-      equal (Just fObj) (parse route "first-empty-constructor")
-      equal (Just sObj) (parse route "second-empty-constructor")
+    router' (Proxy :: Proxy UnionOfEmptyConstructors) (\r -> do
+      equal ("first-empty-constructor") (toUrl r fObj)
+      equal ("second-empty-constructor") (toUrl r sObj)
 
-      equal (Just "second-empty-constructor") (serialize route sObj))
+      equal (Just fObj) (fromUrl r "first-empty-constructor")
+      equal (Just sObj) (fromUrl r "second-empty-constructor"))
 
   test "bob handles multiple non empty constructors" do
     let fObj = FirstConstructor 8 true 9
         sObj = SecondConstructor false
-    bob' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\route -> do
-      equal (Just "first-constructor/8/on/9") (serialize route fObj)
-      equal (Just "second-constructor/off") (serialize route sObj)
+    router' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\r -> do
+      equal ("first-constructor/8/on/9") (toUrl r fObj)
+      equal ("second-constructor/off") (toUrl r sObj)
 
-      equal (Just fObj) (parse route "first-constructor/8/on/9")
-      equal (Just sObj) (parse route "second-constructor/off"))
+      equal (Just fObj) (fromUrl r "first-constructor/8/on/9")
+      equal (Just sObj) (fromUrl r "second-constructor/off"))
 
-  test "we can avoid bob and use direct functions" do
-      equal (Just "first-constructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
-      equal (Just "second-constructor/off") (toUrl (SecondConstructor false))
+  test "we can avoid router and use direct functions" do
+      equal (Just "first-constructor/8/on/9") (genericToUrl (FirstConstructor 8 true 9))
+      equal (Just "second-constructor/off") (genericToUrl (SecondConstructor false))
 
-      equal (Just (FirstConstructor 8 true 9)) (fromUrl "first-constructor/8/on/9")
-      equal (Just (SecondConstructor false)) (fromUrl "second-constructor/off")
+      equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
+      equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
 
 
-  test "bob handles nested structure with primitive value" do
+  test "router handles nested structure with primitive value" do
     let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
-    bob' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\route -> do
-      equal (Just "8") (serialize route obj)
-      equal (Just obj) (parse route "8"))
+    router' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
+      equal ("8") (toUrl r obj)
+      equal (Just obj) (fromUrl r "8"))
 
-  test "bob handles nesteted structures with mutilple constructors" do
+  test "router handles nesteted structures with mutilple constructors" do
     let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
         sObj = SecondOuterConstructor (PrimitivePositionalValues 8 false 100)
 
-    bob' (Proxy :: Proxy NestedStructures) (\route -> do
-      equal (Just "first-outer-constructor/first-constructor/100/on/888") (serialize route fObj)
-      equal (Just fObj) (parse route "first-outer-constructor/first-constructor/100/on/888")
+    router' (Proxy :: Proxy NestedStructures) (\r -> do
+      equal ("first-outer-constructor/first-constructor/100/on/888") (toUrl r fObj)
+      equal (Just fObj) (fromUrl r "first-outer-constructor/first-constructor/100/on/888")
 
-      equal (Just "second-outer-constructor/8/off/100") (serialize route sObj)
-      equal (Just sObj) (parse route "second-outer-constructor/8/off/100"))
+      equal ("second-outer-constructor/8/off/100") (toUrl r sObj)
+      equal (Just sObj) (fromUrl r "second-outer-constructor/8/off/100"))
 
-  test "bob uses correct escaping for string values" do
+  test "router uses correct escaping for string values" do
     let obj = StringValue "this/is?test#string"
-    bob' (Proxy :: Proxy StringValue) (\route -> do
-      equal (Just "this%2Fis%3Ftest%23string") (serialize route obj)
-      equal (Just obj) (parse route "this%2Fis%3Ftest%23string"))
+    router' (Proxy :: Proxy StringValue) (\r -> do
+      equal ("this%2Fis%3Ftest%23string") (toUrl r obj)
+      equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
