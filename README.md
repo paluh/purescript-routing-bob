@@ -25,7 +25,7 @@ Just to give you a hint what this library does, let's copy some tests' fragments
 
     ```purescript
     import Data.Generic (class Generic)
-    import Routing.Bob (bob)
+    import Routing.Bob (bob, toUrl, fromUrl)
     import Type.Proxy (Proxy(..))
 
 
@@ -37,14 +37,15 @@ Just to give you a hint what this library does, let's copy some tests' fragments
 
     -- and related tests' lines
 
-    equal (Just "first-constructor/8/on/9") (toUrl (FirstConstructor 8 true 9))
-    equal (Just "second-constructor/off") (toUrl (SecondConstructor false))
+    equal (Just "first-constructor/8/on/9") (genericToUrl (FirstConstructor 8 true 9))
+    equal (Just "second-constructor/off") (genericToUrl (SecondConstructor false))
 
-    equal (Just (FirstConstructor 8 true 9)) (fromUrl "first-constructor/8/on/9")
-    equal (Just (SecondConstructor false)) (fromUrl "second-constructor/off")
+    equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
+    equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
 
 
     -- below more realistic and faster implementation with pregenerated router
+    -- notice that toUrl used on router generates value without Maybe wrapping
 
     let fObj = FirstConstructor 8 true 9
 
@@ -52,15 +53,15 @@ Just to give you a hint what this library does, let's copy some tests' fragments
 
         -- generting route for given type type:
 
-        maybeRoute = bob (Proxy :: Proxy UnionOfPrimitivePositionalValues)
+        maybeRouter = router (Proxy :: Proxy UnionOfPrimitivePositionalValues)
 
-    -- later we can use this `route` for url generation and url parsing:
+    -- later we can use `router` (unrapped from Maybe) for url generation and url parsing:
 
-    equal (Just "first-constructor/8/on/9") (serialize route fObj)
-    equal (Just "second-constructor/off") (serialize route sObj)
+    equal ("first-constructor/8/on/9") (toUrl router fObj)
+    equal ("second-constructor/off") (toUrl router sObj)
 
-    equal (Just fObj) (parse route "first-constructor/8/on/9")
-    equal (Just sObj) (parse route "second-constructor/off")
+    equal (Just fObj) (fromUrl router "first-constructor/8/on/9")
+    equal (Just sObj) (fromUrl router "second-constructor/off")
 
     ```
 
@@ -77,15 +78,16 @@ Just to give you a hint what this library does, let's copy some tests' fragments
 
 
     let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
+        maybeRouter = router (Proxy :: Proxy NestedStructures)
 
-    equal (Just "first-outer-constructor/first-constructor/100/on/888") (tUrl fObj)
-    equal (Just fObj) (fromUrl "first-outer-constructor/first-constructor/100/on/888"))
+    equal ("first-outer-constructor/first-constructor/100/on/888") (toUrl router fObj)
+    equal (Just fObj) (fromUrl router "first-outer-constructor/first-constructor/100/on/888"))
 
     let sObj = SecondOuterConstructor (PrimitivePositionalValues 8 false 100)
     -- in case of single constructor (`PrimitivePositionalValues` has one),
     -- constructor name is omited in encoded url
-    equal (Just "second-outer-constructor/8/off/100") (serialize route sObj)
-    equal (Just sObj) (parse route "second-outer-constructor/8/off/100"))
+    equal ("second-outer-constructor/8/off/100") (toUrl router sObj)
+    equal (Just sObj) (fromUrl router "second-outer-constructor/8/off/100"))
 
     ```
 
