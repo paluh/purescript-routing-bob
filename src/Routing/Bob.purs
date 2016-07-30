@@ -6,7 +6,7 @@ import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Data.Array (length)
 import Data.Foldable (foldr)
 import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..), GenericSpine(..), toSignature, toSpine)
-import Data.List (List(..), (:))
+import Data.List (reverse, List(..), (:))
 import Data.List (fromFoldable, List)
 import Data.Maybe (fromMaybe, Maybe(..))
 import Data.String (split, toLower)
@@ -74,7 +74,7 @@ signatureToSpineBoomerang s@(SigProd n cs) = do
   fromConstructor :: DataConstructor -> Boolean -> Maybe (StringBoomerang r (HCons GenericSpine r))
   fromConstructor constructor prependWithConstructorName = do
     let values = map (_ $ unit) constructor.sigValues
-    valuesSpines <- Data.Array.foldM (\r e -> (\b -> (lazy <<< b) : r) <$> signatureToSpineBoomerang e) Nil values
+    valuesSpines <- reverse <$> Data.Array.foldM (\r e -> (\b -> (lazy <<< b) : r) <$> signatureToSpineBoomerang e) Nil values
     let bmg = maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< intersperce valuesSpines (lit "/")
     if prependWithConstructorName
       then do

@@ -74,6 +74,15 @@ instance eqStringValue :: Eq StringValue where
 instance showStringValue:: Show StringValue where
   show = gShow
 
+-- regression tests
+
+data MainWindowRoute = Profile | Inbox | Settings
+derive instance genericMainWindowRoute :: Generic MainWindowRoute
+data SideBarRoute = Expanded | Minimized
+derive instance genericSideBarRoute :: Generic SideBarRoute
+data AppRoute = AppRoute MainWindowRoute SideBarRoute
+derive instance genericAppRoute :: Generic AppRoute
+
 
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
@@ -134,7 +143,6 @@ main = runTest $ suite "Test" do
       equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
       equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
 
-
   test "router handles nested structure with primitive value" do
     let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
     router' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
@@ -152,8 +160,13 @@ main = runTest $ suite "Test" do
       equal ("second-outer-constructor/8/off/100") (toUrl r sObj)
       equal (Just sObj) (fromUrl r "second-outer-constructor/8/off/100"))
 
+  test "router handles multiple nesteted structures with multiple constructors" do
+    router' (Proxy :: Proxy AppRoute) (\r -> do
+      equal ("profile/minimized") (toUrl r (AppRoute Profile Minimized)))
+
   test "router uses correct escaping for string values" do
     let obj = StringValue "this/is?test#string"
     router' (Proxy :: Proxy StringValue) (\r -> do
       equal ("this%2Fis%3Ftest%23string") (toUrl r obj)
       equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
+
