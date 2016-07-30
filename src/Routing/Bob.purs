@@ -1,21 +1,19 @@
 module Routing.Bob where
 
 import Data.Array as Data.Array
-import Data.List as List
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Data.Array (length)
 import Data.Foldable (foldr)
 import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..), GenericSpine(..), toSignature, toSpine)
-import Data.List (reverse, List(..), (:))
-import Data.List (fromFoldable, List)
+import Data.List (fromFoldable, List(..), reverse, (:))
 import Data.Maybe (fromMaybe, Maybe(..))
-import Data.String (split, toLower)
+import Data.String (split)
 import Partial.Unsafe (unsafePartial)
-import Prelude (bind, const, id, map, pure, show, unit, Unit, (<<<), (<>), (==), (<$>), ($), (>))
-import Text.Boomerang.Combinators (cons, list, maph, nil)
-import Text.Boomerang.HStack (HNil(HNil), HCons)
+import Prelude (Unit, pure, bind, show, unit, map, const, ($), (<<<), (<$>), (<>), (==))
+import Text.Boomerang.Combinators (maph, nil, cons)
+import Text.Boomerang.HStack (HNil, HCons)
 import Text.Boomerang.Prim (Boomerang)
-import Text.Boomerang.String (int, lit, many1NoneOf, noneOf, parse, StringBoomerang, serialize, string)
+import Text.Boomerang.String (StringBoomerang, parse, serialize, int, lit, many1NoneOf, string)
 import Type.Proxy (Proxy(..))
 
 join :: forall a b c. StringBoomerang b c -> StringBoomerang a b -> StringBoomerang a c
