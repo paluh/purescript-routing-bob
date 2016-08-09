@@ -1,17 +1,27 @@
 module Test.Main where
 
 import Prelude
+import Control.Error.Util (hush)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.AVar (AVAR)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
-import Data.Generic (class Generic, gEq, gShow)
+import Data.Either (Either(Left))
+import Data.Generic (gShow, class Generic, gEq)
 import Data.Maybe (Maybe(..))
-import Routing.Bob (Router, fromUrl, toUrl, genericFromUrl, genericToUrl, router)
+import Data.StrMap (fromFoldable)
+import Data.Tuple (Tuple(Tuple))
+import Routing.Bob (boolean, UrlBoomerang, param, UrlBoomerangToken, Router, fromUrl, toUrl, genericFromUrl, genericToUrl, router)
 import Test.Unit (suite, failure, test, TIMER)
 import Test.Unit.Assert (equal)
 import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Main (runTest)
+import Text.Boomerang.Combinators (pureBmg)
+import Text.Boomerang.HStack (hCons, hArg, hNil, hHead, HCons(HCons), HNil(HNil))
+import Text.Boomerang.Prim (Boomerang(Boomerang))
+import Text.Boomerang.String (int, StringBoomerang, manyNoneOf)
+import Text.Parsing.Parser (ParseError(ParseError), runParser)
+import Text.Parsing.Parser.Pos (initialPos)
 import Type.Proxy (Proxy(..))
 
 data BooleanIntRoute = BooleanIntRoute
@@ -170,3 +180,51 @@ main = runTest $ suite "Test" do
       equal ("this%2Fis%3Ftest%23string") (toUrl r obj)
       equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
 
+  test "single param parsing" do
+    let
+      query = fromFoldable [Tuple "param" "somevalue"]
+      url = { path: "/", query: query }
+      urlBmg = param "param" (manyNoneOf "")
+    equal Nothing (parse urlBmg url)
+
+  test "multiple parameters parsing" do
+    let
+      query = fromFoldable [Tuple "paramInt" "8", Tuple "paramBoolean" "off", Tuple "paramString" "somestringvalue"]
+      url = { path: "/", query: query }
+      urlBmg = multipleParams
+    equal Nothing (parse multipleParams url)
+
+
+newtype Params =
+  Params
+    { paramString :: String
+    , paramInt :: Int
+    , paramBoolean :: Boolean
+    }
+derive instance genericParms :: Generic Params
+derive instance eqParams :: Eq Params
+
+instance showParams :: Show Params where
+  show = gShow
+
+multipleParams :: forall r. UrlBoomerang r (HCons Params r)
+multipleParams =
+  rBmg <<< param "paramString" any <<< param "paramInt" int <<< param "paramBoolean" boolean
+ where
+  rBmg =
+    pureBmg
+      (hArg (hArg (hArg hCons)) (((Params <$> _) <$>  _) <$> {paramString: _, paramInt: _, paramBoolean: _ }))
+      (\(HCons (Params r) t) -> Just (hCons r.paramString (hCons r.paramInt (hCons r.paramBoolean t))))
+
+-- any :: StringBoomerang r (HCons String r)
+any :: forall r. StringBoomerang r (HCons String r)
+any = manyNoneOf ""
+
+parse :: forall a. UrlBoomerang HNil (HCons a HNil) -> UrlBoomerangToken -> Maybe a
+parse (Boomerang b) s = do
+  f <- hush (runParser s (do
+    r <- b.prs
+    -- XXX: check whether query string was completely consumed
+    -- eof
+    pure r))
+  pure (hHead (f hNil))

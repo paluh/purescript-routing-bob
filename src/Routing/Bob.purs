@@ -3,23 +3,102 @@ module Routing.Bob where
 import Data.Array as Data.Array
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Data.Array (length)
+import Data.Either (Either(Right, Left))
 import Data.Foldable (foldr)
 import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..), GenericSpine(..), toSignature, toSpine)
+import Data.Identity (Identity)
 import Data.List (fromFoldable, List(..), reverse, (:))
 import Data.Maybe (fromMaybe, Maybe(..))
+import Data.StrMap (StrMap, insert, pop)
 import Data.String (split)
+import Data.Tuple (snd, Tuple(Tuple), fst)
 import Partial.Unsafe (unsafePartial)
 import Prelude (Unit, pure, bind, show, unit, map, const, ($), (<<<), (<$>), (<>), (==))
 import Text.Boomerang.Combinators (maph, nil, cons)
 import Text.Boomerang.HStack (HNil, HCons)
-import Text.Boomerang.Prim (Boomerang)
+import Text.Boomerang.Prim (runSerializer, Serializer(Serializer), Boomerang(Boomerang))
 import Text.Boomerang.String (StringBoomerang, parse, serialize, int, lit, many1NoneOf, string)
+import Text.Parsing.Parser (ParseError, Parser, PState(PState), ParserT(ParserT), parseFailed, runParser, unParserT)
+import Text.Parsing.Parser.Pos (Position)
 import Type.Proxy (Proxy(..))
 
-join :: forall a b c. StringBoomerang b c -> StringBoomerang a b -> StringBoomerang a c
-join b1 b2 = b1 <<< lit "/" <<< b2
+-- we want to parse/serialize query and path at the same time
+type UrlBoomerangToken =
+  { path :: String
+  , query :: StrMap String
+  }
 
-infixl 6 join as </>
+type UrlBoomerang a b = Boomerang UrlBoomerangToken a b
+
+liftStringBoomerang :: forall r r'. StringBoomerang r r' -> UrlBoomerang r r'
+liftStringBoomerang (Boomerang ps) =
+  Boomerang
+    { prs: liftPrs ps.prs
+    , ser: liftSer ps.ser
+    }
+ where
+  -- this is just a proof of concept parser implementation - we need something
+  -- more robust if we want to perform error reporting
+  liftPrs :: forall p a. Parser String a -> Parser { path :: String | p } a
+  liftPrs prs =
+    ParserT prs'
+   where
+    prs' (PState i) = do
+      result <- unParserT prs (PState { input: i.input.path, position: i.position })
+      pure $ (result { input = i.input { path = result.input }})
+
+  liftSer :: forall p s s'. Serializer String s s' -> Serializer { path :: String | p } s s'
+  liftSer (Serializer ser) =
+    Serializer ser'
+   where
+    ser' a = do
+      t <- ser a
+      let
+        f = fst t
+        f' r = r { path = f r.path }
+      pure (Tuple f' (snd t))
+
+string' :: forall a. String -> UrlBoomerang a (HCons String a)
+string' s = liftStringBoomerang (string s)
+
+-- newtype ParserT s m a = ParserT (PState s -> m { input :: s, result :: Either ParseError a, consumed :: Boolean, position :: Position })
+-- newtype Serializer tok a b = Serializer (a -> Maybe (Tuple (tok -> tok) b))
+
+param :: forall a r. String -> StringBoomerang r (HCons a r) -> UrlBoomerang r (HCons a r)
+param name (Boomerang valueBmg) =
+  Boomerang
+    { prs: ParserT prs
+    , ser: Serializer ser
+    }
+ where
+  prs :: (PState UrlBoomerangToken) ->
+         Identity
+          { input :: UrlBoomerangToken
+          , result :: Either ParseError (r -> HCons a r)
+          , consumed :: Boolean
+          , position :: Position
+          }
+  prs (PState t) =
+    case pop name input.query of
+      Just (Tuple valueString query') ->
+        let ev = runParser valueString valueBmg.prs
+        in case ev of
+          Left e -> pure $ parseFailed input t.position ("Fail to parse param " <> name <> ".")
+          Right v -> pure
+            { input: (input {query = query'})
+            , result: Right v
+            , consumed: false
+            , position: t.position
+            }
+      Nothing -> pure $ parseFailed input t.position ("Mising param " <> name <> ".")
+   where
+    input = t.input
+
+  ser :: HCons a r -> Maybe (Tuple (UrlBoomerangToken -> UrlBoomerangToken) r)
+  ser v =
+    case runSerializer valueBmg.ser v of
+      Just (Tuple f rest) -> let v' = f "" in pure (Tuple (\r -> r { query = insert name v' r.query}) rest)
+      Nothing -> Nothing
 
 boolean :: forall r. StringBoomerang r (HCons Boolean r)
 boolean =
@@ -79,7 +158,7 @@ signatureToSpineBoomerang s@(SigProd n cs) = do
         let cn = serializeConstructorName constructor.sigConstructor
         if length values == 0
           then pure (lit cn <<< bmg)
-          else pure (lit cn </> bmg)
+          else pure (lit cn <<< lit "/" <<< bmg)
       else pure bmg
    where
     lazy :: forall z y. StringBoomerang (HCons y z) (HCons (Unit -> y) z)
