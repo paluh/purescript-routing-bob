@@ -67,36 +67,33 @@ string' s = liftStringBoomerang (string s)
 param :: forall a r. String -> StringBoomerang r (HCons a r) -> UrlBoomerang r (HCons a r)
 param name (Boomerang valueBmg) =
   Boomerang
-    { prs: ParserT prs
-    , ser: Serializer ser
+    { prs: prs
+    , ser: ser
     }
  where
-  prs :: (PState UrlBoomerangToken) ->
-         Identity
-          { input :: UrlBoomerangToken
-          , result :: Either ParseError (r -> HCons a r)
-          , consumed :: Boolean
-          , position :: Position
-          }
-  prs (PState t) =
-    case pop name input.query of
-      Just (Tuple valueString query') ->
-        let ev = runParser valueString valueBmg.prs
-        in case ev of
-          Left e -> pure $ parseFailed input t.position ("Fail to parse param " <> name <> ".")
-          Right v -> pure
-            { input: (input {query = query'})
-            , result: Right v
-            , consumed: false
-            , position: t.position
-            }
-      Nothing -> pure $ parseFailed input t.position ("Mising param " <> name <> ".")
+  prs :: ParserT UrlBoomerangToken Identity (r -> HCons a r)
+  prs =
+    ParserT prs'
    where
-    input = t.input
+    prs' (PState t) =
+      case pop name input.query of
+        Just (Tuple valueString query') ->
+          let ev = runParser valueString valueBmg.prs
+          in case ev of
+            Left e -> pure $ parseFailed input t.position ("Fail to parse param " <> name <> ".")
+            Right v -> pure
+              { input: (input {query = query'})
+              , result: Right v
+              , consumed: false
+              , position: t.position
+              }
+        Nothing -> pure $ parseFailed input t.position ("Mising param " <> name <> ".")
+     where
+      input = t.input
 
-  ser :: HCons a r -> Maybe (Tuple (UrlBoomerangToken -> UrlBoomerangToken) r)
-  ser v =
-    case runSerializer valueBmg.ser v of
+  ser :: Serializer UrlBoomerangToken (HCons a r) r
+  ser =
+    Serializer $ \v -> case runSerializer valueBmg.ser v of
       Just (Tuple f rest) -> let v' = f "" in pure (Tuple (\r -> r { query = insert name v' r.query}) rest)
       Nothing -> Nothing
 

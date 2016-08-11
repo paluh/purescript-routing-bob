@@ -85,6 +85,38 @@ instance eqStringValue :: Eq StringValue where
 instance showStringValue:: Show StringValue where
   show = gShow
 
+newtype Params =
+  Params
+    { paramString :: String
+    , paramInt :: Int
+    , paramBoolean :: Boolean
+    }
+derive instance genericParms :: Generic Params
+derive instance eqParams :: Eq Params
+
+instance showParams :: Show Params where
+  show = gShow
+
+params :: String -> Int -> Boolean -> Params
+params = ((Params <$> _) <$>  _) <$> {paramString: _, paramInt: _, paramBoolean: _ }
+
+any :: forall r. StringBoomerang r (HCons String r)
+any = manyNoneOf ""
+
+parse :: forall a. UrlBoomerang HNil (HCons a HNil) -> UrlBoomerangToken -> Maybe a
+parse (Boomerang b) s = do
+  f <- hush (runParser s (do
+    r <- b.prs
+    -- XXX: check whether query string was completely consumed
+    -- eof
+    pure r))
+  pure (hHead (f hNil))
+
+serialize :: forall a. UrlBoomerang HNil (HCons a HNil) -> a -> Maybe UrlBoomerangToken
+serialize (Boomerang b) s = do
+  (Tuple f _) <- runSerializer b.ser (hSingleton s)
+  pure (f ({ path: "", query: empty }))
+
 -- regression tests
 
 data MainWindowRoute = Profile | Inbox | Settings
@@ -180,6 +212,14 @@ main = runTest $ suite "Test" do
     router' (Proxy :: Proxy StringValue) (\r -> do
       equal ("this%2Fis%3Ftest%23string") (toUrl r obj)
       equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
+  -- multipleParams :: forall r. UrlBoomerang r (HCons Params r)
+  let
+    pBmg =
+      pureBmg
+        (hArg (hArg (hArg hCons)) params)
+        (\(HCons (Params r) t) -> Just (hCons r.paramString (hCons r.paramInt (hCons r.paramBoolean t))))
+    multipleParams =
+      pBmg <<< param "paramString" any <<< param "paramInt" int <<< param "paramBoolean" boolean
 
   suite "Query parsing" do
     test "single param parsing" do
@@ -199,52 +239,9 @@ main = runTest $ suite "Test" do
         (parse multipleParams url)
         (Just $ params "somestringvalue" 8 false)
 
-  suite "Query serializing" do
+  suite "Query serialization" do
     test "serialization" do
       equal
         (Just <<< fromList $ (Tuple "paramBoolean" "off") : (Tuple "paramInt" "8") : (Tuple "paramString" "tes") : Nil)
         (_.query <$> (serialize multipleParams (params "tes" 8 false)))
 
-
-
-newtype Params =
-  Params
-    { paramString :: String
-    , paramInt :: Int
-    , paramBoolean :: Boolean
-    }
-derive instance genericParms :: Generic Params
-derive instance eqParams :: Eq Params
-
-params :: String -> Int -> Boolean -> Params
-params = ((Params <$> _) <$>  _) <$> {paramString: _, paramInt: _, paramBoolean: _ }
-
-instance showParams :: Show Params where
-  show = gShow
-
-multipleParams :: forall r. UrlBoomerang r (HCons Params r)
-multipleParams =
-  rBmg <<< param "paramString" any <<< param "paramInt" int <<< param "paramBoolean" boolean
- where
-  rBmg =
-    pureBmg
-      (hArg (hArg (hArg hCons)) params)
-      (\(HCons (Params r) t) -> Just (hCons r.paramString (hCons r.paramInt (hCons r.paramBoolean t))))
-
--- any :: StringBoomerang r (HCons String r)
-any :: forall r. StringBoomerang r (HCons String r)
-any = manyNoneOf ""
-
-parse :: forall a. UrlBoomerang HNil (HCons a HNil) -> UrlBoomerangToken -> Maybe a
-parse (Boomerang b) s = do
-  f <- hush (runParser s (do
-    r <- b.prs
-    -- XXX: check whether query string was completely consumed
-    -- eof
-    pure r))
-  pure (hHead (f hNil))
-
-serialize :: forall a. UrlBoomerang HNil (HCons a HNil) -> a -> Maybe UrlBoomerangToken
-serialize (Boomerang b) s = do
-  (Tuple f _) <- runSerializer b.ser (hSingleton s)
-  pure (f ({ path: "", query: empty }))
