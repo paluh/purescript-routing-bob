@@ -1,221 +1,222 @@
 module Routing.Bob where
 
+import Prelude
 import Data.Array as Data.Array
+import Control.Error.Util (hush)
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
-import Data.Array (length)
-import Data.Either (Either(Right, Left))
-import Data.Foldable (foldr)
-import Data.Generic (class Generic, DataConstructor, fromSpine, GenericSignature(..), GenericSpine(..), toSignature, toSpine)
-import Data.Identity (Identity)
-import Data.List (fromFoldable, List(..), reverse, (:))
-import Data.Maybe (fromMaybe, Maybe(..))
-import Data.StrMap (StrMap, insert, pop)
+import Data.Array (uncons)
+import Data.Foldable (class Foldable, foldr, foldlDefault, foldrDefault, fold)
+import Data.Generic (class Generic, GenericSignature(SigString, SigBoolean, SigInt, SigProd), GenericSpine(SString, SInt, SBoolean, SProd), toSpine, fromSpine, toSignature)
+import Data.List (List(Cons, Nil), null, fromFoldable, concatMap, (:))
+import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
+import Data.Monoid (mempty)
+import Data.NonEmpty (fromNonEmpty, NonEmpty, (:|), foldMap1)
+import Data.StrMap (empty)
 import Data.String (split)
-import Data.Tuple (snd, Tuple(Tuple), fst)
+import Data.Traversable (class Traversable, traverse, for)
+import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
-import Prelude (Unit, pure, bind, show, unit, map, const, ($), (<<<), (<$>), (<>), (==))
-import Text.Boomerang.Combinators (maph, nil, cons)
-import Text.Boomerang.HStack (HNil, HCons)
-import Text.Boomerang.Prim (runSerializer, Serializer(Serializer), Boomerang(Boomerang))
-import Text.Boomerang.String (StringBoomerang, parse, serialize, int, lit, many1NoneOf, string)
-import Text.Parsing.Parser (ParseError, Parser, PState(PState), ParserT(ParserT), parseFailed, runParser, unParserT)
-import Text.Parsing.Parser.Pos (Position)
-import Type.Proxy (Proxy(..))
+import Routing.Bob.UrlBoomerang (str, boolean, liftStringBoomerang, liftStringPrs, Url, UrlBoomerang)
+import Text.Boomerang.Combinators (maph, nil, cons, duck1)
+import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
+import Text.Boomerang.Prim (Boomerang(Boomerang), runSerializer)
+import Text.Boomerang.String (int, lit)
+import Text.Parsing.Parser (runParser)
+import Text.Parsing.Parser.String (eof)
+import Type.Proxy (Proxy(Proxy))
 
--- we want to parse/serialize query and path at the same time
-type UrlBoomerangToken =
-  { path :: String
-  , query :: StrMap String
-  }
+newtype Fix f = Fix (f (Fix f))
 
-type UrlBoomerang a b = Boomerang UrlBoomerangToken a b
+-- convertion between types and urls is done through
+-- basic recursion schemes - cata and ana
+-- don't be afraid it's nothing really fancy - it's just fold and unfold
+-- but this strategy simplifies code a lot
+unFix :: forall f. Fix f -> f (Fix f)
+unFix (Fix f) = f
 
-liftStringBoomerang :: forall r r'. StringBoomerang r r' -> UrlBoomerang r r'
-liftStringBoomerang (Boomerang ps) =
-  Boomerang
-    { prs: liftPrs ps.prs
-    , ser: liftSer ps.ser
-    }
+cata :: forall a f. Functor f => (f a -> a) -> Fix f -> a
+cata alg = alg <<< (cata alg <$> _) <<< unFix
+
+ana :: forall a f. Functor f => (a -> f a) -> a -> Fix f
+ana coalg = Fix <<< (ana coalg <$> _) <<< coalg
+
+anaM :: forall a f m. (Functor f, Monad m, Traversable f) => (a -> m (f a)) -> a -> m (Fix f)
+anaM coalgM = ((map Fix) <<< traverse (anaM coalgM)) <=< coalgM
+
+-- subset of GenericSignature which is covered by this library
+data SigF r
+  = SigProdF String (NonEmpty List (DataConstructorF r))
+  -- | SigRecordF (Array { recLabel :: String, recValue :: SigRecValue })
+  | SigBooleanF
+  | SigIntF
+  | SigStringF
+
+type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
+
+data SigRecValue
+  = SigRecInt
+  | SigRecBoolean
+
+instance functorSigF :: Functor SigF where
+  map f (SigProdF s a) = SigProdF s (map (\r -> r { sigValues=map f r.sigValues }) a)
+  -- map _ (SigRecordF a) = SigRecordF a
+  map _ SigBooleanF = SigBooleanF
+  map _ SigIntF = SigIntF
+  map _ SigStringF = SigStringF
+
+instance foldableSigF :: Foldable SigF where
+  foldMap f (SigProdF s a) =
+    fold <<< concatMap (\r -> map f r.sigValues) <<< (fromNonEmpty (:)) $ a
+  foldMap _ _ = mempty
+  foldr f = foldrDefault f
+  foldl f = foldlDefault f
+
+instance traversableSigF :: Traversable SigF where
+  traverse f (SigProdF s a) =
+    SigProdF s <$> for a (\r -> r { sigValues = _ } <$> for r.sigValues f)
+  -- traverse _ (SigRecordF a) = pure (SigRecordF a)
+  traverse _ SigBooleanF = pure SigBooleanF
+  traverse _ SigIntF = pure SigIntF
+  traverse _ SigStringF = pure SigStringF
+  sequence = traverse id
+
+fromGenericSignature :: GenericSignature -> Maybe (SigF GenericSignature)
+fromGenericSignature (SigProd s a) = do
+  {head: h, tail: t} <- uncons <<< map fromConstructor $ a
+  pure $ SigProdF s (h :| fromFoldable t)
  where
-  -- this is just a proof of concept parser implementation - we need something
-  -- more robust if we want to perform error reporting
-  liftPrs :: forall p a. Parser String a -> Parser { path :: String | p } a
-  liftPrs prs =
-    ParserT prs'
-   where
-    prs' (PState i) = do
-      result <- unParserT prs (PState { input: i.input.path, position: i.position })
-      pure $ (result { input = i.input { path = result.input }})
+  fromConstructor c = c { sigValues = fromFoldable $ map (_ $ unit) c.sigValues }
+fromGenericSignature SigInt = Just SigIntF
+fromGenericSignature SigBoolean = Just SigBooleanF
+fromGenericSignature SigString = Just SigStringF
+fromGenericSignature _ = Nothing
 
-  liftSer :: forall p s s'. Serializer String s s' -> Serializer { path :: String | p } s s'
-  liftSer (Serializer ser) =
-    Serializer ser'
-   where
-    ser' a = do
-      t <- ser a
-      let
-        f = fst t
-        f' r = r { path = f r.path }
-      pure (Tuple f' (snd t))
+type UrlBoomerangForGenericSpine r = UrlBoomerang r (GenericSpine :- r)
 
-string' :: forall a. String -> UrlBoomerang a (HCons String a)
-string' s = liftStringBoomerang (string s)
-
--- newtype ParserT s m a = ParserT (PState s -> m { input :: s, result :: Either ParseError a, consumed :: Boolean, position :: Position })
--- newtype Serializer tok a b = Serializer (a -> Maybe (Tuple (tok -> tok) b))
-
-param :: forall a r. String -> StringBoomerang r (HCons a r) -> UrlBoomerang r (HCons a r)
-param name (Boomerang valueBmg) =
-  Boomerang
-    { prs: prs
-    , ser: ser
-    }
+toSpineBoomerang :: forall r. SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
+toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
+  foldMap1 fromConstructor cs
  where
-  prs :: ParserT UrlBoomerangToken Identity (r -> HCons a r)
-  prs =
-    ParserT prs'
+  fromConstructor :: DataConstructorF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
+  fromConstructor constructor =
+    bmg
    where
-    prs' (PState t) =
-      case pop name input.query of
-        Just (Tuple valueString query') ->
-          let ev = runParser valueString valueBmg.prs
-          in case ev of
-            Left e -> pure $ parseFailed input t.position ("Fail to parse param " <> name <> ".")
-            Right v -> pure
-              { input: (input {query = query'})
-              , result: Right v
-              , consumed: false
-              , position: t.position
-              }
-        Nothing -> pure $ parseFailed input t.position ("Mising param " <> name <> ".")
+    valuesBmg =
+      intersperce (liftStringBoomerang (lit "/")) <<< map (lazy <<< _) <<< _.sigValues $ constructor
      where
-      input = t.input
+      lazy :: forall z y. UrlBoomerang (y :- z) ((Unit -> y) :- z)
+      lazy = maph const (Just <<< (_ $ unit))
 
-  ser :: Serializer UrlBoomerangToken (HCons a r) r
-  ser =
-    Serializer $ \v -> case runSerializer valueBmg.ser v of
-      Just (Tuple f rest) -> let v' = f "" in pure (Tuple (\r -> r { query = insert name v' r.query}) rest)
-      Nothing -> Nothing
+      intersperce :: forall tok a t. (forall r. Boomerang tok r r) ->
+                                     List (Boomerang tok t (a :- t)) ->
+                                     Boomerang tok t ((List a) :- t)
+      intersperce _ Nil = nil
+      intersperce sep (Cons b t) =
+        cons <<< duck1 b <<< foldr step nil t
+       where
+        step e l = sep <<< cons <<< duck1 e <<< l
 
-boolean :: forall r. StringBoomerang r (HCons Boolean r)
-boolean =
-  boolean' <<< (string "on" <> string "off")
- where
-  boolean' :: forall s. StringBoomerang (HCons String s) (HCons Boolean s)
-  boolean' =
-    maph prs ser
-   where
-    prs "on" = true
-    prs _    = false
+    constructorBmg =
+      maph prs ser <<< arrayFromList <<< valuesBmg
+     where
+      arrayFromList :: forall t a tok. Boomerang tok (List a :- t) (Array a :- t)
+      arrayFromList =
+        maph arrayFromFoldable (Just <<< fromFoldable)
+       where
+        -- very ineficient - will be replaced with next purescript-array release
+        arrayFromFoldable = foldr Data.Array.cons []
 
-    ser true  = Just "on"
-    ser false = Just "off"
+      prs = SProd constructor.sigConstructor
+      ser (SProd c values) | c == constructor.sigConstructor = Just values
+                           | otherwise = Nothing
+      ser _                = Nothing
 
-foreign import encodeURIComponent :: String -> String
-foreign import decodeURIComponent :: String -> String
-foreign import camelsToHyphens :: String -> String
+    constructorNameBmg =
+      liftStringBoomerang (lit constructorName)
+     where
+      constructorName = serializeConstructorName constructor.sigConstructor
 
-str :: forall r. StringBoomerang r (HCons String r)
-str =
-  maph (decodeURIComponent) (Just <<< encodeURIComponent) <<< many1NoneOf "/?#"
-
-arrayFromList :: forall t a tok. Boomerang tok (HCons (List a) t) (HCons (Array a) t)
-arrayFromList =
-  maph arrayFromFoldable (Just <<< fromFoldable)
- where
-  -- very ineficient - will be replaced with next purescript-array release
-  arrayFromFoldable = foldr Data.Array.cons []
-
-intersperce :: forall tok a t. (List (Boomerang tok (HCons (List a) t) (HCons a (HCons (List a) t)))) ->
-                               (forall r. Boomerang tok r r) ->
-                               Boomerang tok t (HCons (List a) t)
-intersperce Nil _ = nil
-intersperce (Cons b t) sep =
-  cons <<< b <<< foldr step nil t
- where
-  step e l = sep <<< cons <<< e <<< l
-
-signatureToSpineBoomerang :: forall r. GenericSignature -> Maybe (StringBoomerang r (HCons GenericSpine r))
-signatureToSpineBoomerang s@(SigProd n cs) = do
-  { head : h, tail: t} <- Data.Array.uncons cs
-  if length t == 0
-    then
-      fromConstructor h false
-    else do
-      hs <- fromConstructor h true
-      Data.Array.foldM (\r c -> (_ <> r) <$> (fromConstructor c true)) hs t
- where
-  fromConstructor :: DataConstructor -> Boolean -> Maybe (StringBoomerang r (HCons GenericSpine r))
-  fromConstructor constructor prependWithConstructorName = do
-    let values = map (_ $ unit) constructor.sigValues
-    valuesSpines <- reverse <$> Data.Array.foldM (\r e -> (\b -> (lazy <<< b) : r) <$> signatureToSpineBoomerang e) Nil values
-    let bmg = maph (SProd constructor.sigConstructor) ser <<< arrayFromList <<< intersperce valuesSpines (lit "/")
-    if prependWithConstructorName
-      then do
-        let cn = serializeConstructorName constructor.sigConstructor
-        if length values == 0
-          then pure (lit cn <<< bmg)
-          else pure (lit cn <<< lit "/" <<< bmg)
-      else pure bmg
-   where
-    lazy :: forall z y. StringBoomerang (HCons y z) (HCons (Unit -> y) z)
-    lazy = maph const (Just <<< (_ $ unit))
-
-    ser (SProd c values) =
-      if c == constructor.sigConstructor
-        then Just values
-        else Nothing
-    ser _                = Nothing
-signatureToSpineBoomerang SigBoolean =
-  Just (maph SBoolean ser <<< boolean)
+    bmg | null t = constructorBmg
+        | null constructor.sigValues = (constructorNameBmg <<< constructorBmg)
+        | otherwise = constructorNameBmg <<< liftStringBoomerang (lit "/") <<< constructorBmg
+toSpineBoomerang SigBooleanF =
+  liftStringBoomerang (maph SBoolean ser <<< boolean)
  where
   ser (SBoolean b) = Just b
   ser _            = Nothing
-signatureToSpineBoomerang SigInt =
-  Just (maph SInt ser <<< int)
+toSpineBoomerang SigIntF =
+  liftStringBoomerang (maph SInt ser <<< int)
  where
   ser (SInt b) = Just b
   ser _        = Nothing
-signatureToSpineBoomerang SigString =
-  Just (maph SString ser <<< str)
+toSpineBoomerang SigStringF =
+  liftStringBoomerang (maph SString ser <<< str)
  where
   ser (SString s) = Just s
   ser _        = Nothing
-signatureToSpineBoomerang _ = Nothing
+-- SigRecord (Array { recLabel :: String, recValue :: Unit -> GenericSignature }) =
 
-bob :: forall a r. (Generic a) => Proxy a -> Maybe (StringBoomerang r (HCons a r))
+parse :: forall a. UrlBoomerang HNil (a :- HNil) -> Url -> Maybe a
+parse (Boomerang b) tok = do
+  f <- hush (runParser tok (do
+    r <- b.prs
+    -- we have to consume whole input
+    liftStringPrs eof
+    pure r))
+  pure (hHead (f hNil))
+
+serialize :: forall a. UrlBoomerang HNil (a :- HNil) -> a -> Maybe Url
+serialize (Boomerang b) s = do
+  (Tuple f _) <- runSerializer b.ser (hSingleton s)
+  pure (f { path: "", query: empty })
+
+bob :: forall a r. (Generic a) => Proxy a -> Maybe (UrlBoomerang r (a :- r))
 bob p = do
-  sb <- (signatureToSpineBoomerang (toSignature p))
+  sb <- cata toSpineBoomerang <$> (anaM fromGenericSignature (toSignature p))
   pure (maph prs (\v -> Just (Just v)) <<< maph fromSpine (toSpine <$> _) <<< sb)
  where
   prs (Just s) = s
   prs Nothing = unsafeThrow ("Incorrect spine generated for signature: " <> show (toSignature p))
 
+foreign import camelsToHyphens :: String -> String
+
 serializeConstructorName :: String -> String
 serializeConstructorName n =
   camelsToHyphens (fromMaybe n (Data.Array.last <<< split "." $ n))
 
-genericToUrl :: forall a. (Generic a) => a -> Maybe String
+genericToUrl :: forall a. (Generic a) => a -> Maybe Url
 genericToUrl a = do
   route <- bob (Proxy :: Proxy a)
   serialize route a
 
-genericFromUrl :: forall a. (Generic a) => String -> Maybe a
-genericFromUrl s = do
-  route <- bob (Proxy :: Proxy a)
-  parse route s
+genericToUrlPath :: forall a. (Generic a) => a -> Maybe String
+genericToUrlPath a = _.path <$> genericToUrl a
 
-data Router a = Router (StringBoomerang HNil (HCons a HNil))
+genericFromUrl :: forall a. (Generic a) => Url -> Maybe a
+genericFromUrl u = do
+  route <- bob (Proxy :: Proxy a)
+  parse route u
+
+genericFromUrlPath :: forall a. (Generic a) => String -> Maybe a
+genericFromUrlPath s = genericFromUrl { path: s, query: empty }
+
+data Router a = Router (UrlBoomerang HNil (a :- HNil))
 
 router :: forall a. (Generic a) => Proxy a -> Maybe (Router a)
 router p = do
   b <- bob p
   pure $ Router b
 
-toUrl :: forall a. Router a -> a -> String
+toUrl :: forall a. Router a -> a -> Url
 toUrl (Router bmg) a =
   unsafePartial (case serialize bmg a of Just url -> url)
 
-fromUrl :: forall a. Router a -> String -> Maybe a
-fromUrl (Router bmg) s =
-  parse bmg s
+toUrlPath :: forall a. Router a -> a -> String
+toUrlPath r a = let url = toUrl r a in url.path
+
+fromUrl :: forall a. Router a -> Url -> Maybe a
+fromUrl (Router bmg) url =
+  parse bmg url
+
+fromUrlPath :: forall a. Router a -> String -> Maybe a
+fromUrlPath r s = fromUrl r { path: s, query: empty }

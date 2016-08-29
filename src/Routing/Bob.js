@@ -3,9 +3,6 @@
 
 // module Routing.Bob
 
-exports.encodeURIComponent = encodeURIComponent;
-exports.decodeURIComponent = decodeURIComponent;
-
 exports.camelsToHyphens = function(s) {
   return s.replace(/([A-Z])/g, function($1, _, i){
     if(i > 0) {

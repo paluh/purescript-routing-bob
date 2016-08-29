@@ -1,28 +1,24 @@
 module Test.Main where
 
 import Prelude
-import Control.Error.Util (hush)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.AVar (AVAR)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
-import Data.Either (Either(Left))
 import Data.Generic (gShow, class Generic, gEq)
 import Data.List (List(Nil), (:))
 import Data.Maybe (Maybe(..))
-import Data.StrMap (fromList, StrMap, empty, fromFoldable)
+import Data.StrMap (empty, fromList, StrMap, fromFoldable)
 import Data.Tuple (Tuple(Tuple))
-import Routing.Bob (boolean, UrlBoomerang, param, UrlBoomerangToken, Router, fromUrl, toUrl, genericFromUrl, genericToUrl, router)
+import Routing.Bob (Router, serialize, parse, fromUrl, genericFromUrl, genericToUrl, router, toUrl)
+import Routing.Bob.UrlBoomerang (Url, param, boolean)
 import Test.Unit (suite, failure, test, TIMER)
 import Test.Unit.Assert (equal)
 import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Main (runTest)
 import Text.Boomerang.Combinators (pureBmg)
-import Text.Boomerang.HStack (hSingleton, hCons, hArg, hNil, hHead, HCons(HCons), HNil(HNil))
-import Text.Boomerang.Prim (runSerializer, Boomerang(Boomerang))
+import Text.Boomerang.HStack (HCons(HCons), hCons, hArg)
 import Text.Boomerang.String (int, StringBoomerang, manyNoneOf)
-import Text.Parsing.Parser (ParseError(ParseError), runParser)
-import Text.Parsing.Parser.Pos (initialPos)
 import Type.Proxy (Proxy(..))
 
 data BooleanIntRoute = BooleanIntRoute
@@ -103,20 +99,6 @@ params = ((Params <$> _) <$>  _) <$> {paramString: _, paramInt: _, paramBoolean:
 any :: forall r. StringBoomerang r (HCons String r)
 any = manyNoneOf ""
 
-parse :: forall a. UrlBoomerang HNil (HCons a HNil) -> UrlBoomerangToken -> Maybe a
-parse (Boomerang b) s = do
-  f <- hush (runParser s (do
-    r <- b.prs
-    -- XXX: check whether query string was completely consumed
-    -- eof
-    pure r))
-  pure (hHead (f hNil))
-
-serialize :: forall a. UrlBoomerang HNil (HCons a HNil) -> a -> Maybe UrlBoomerangToken
-serialize (Boomerang b) s = do
-  (Tuple f _) <- runSerializer b.ser (hSingleton s)
-  pure (f ({ path: "", query: empty }))
-
 -- regression tests
 
 data MainWindowRoute = Profile | Inbox | Settings
@@ -126,92 +108,110 @@ derive instance genericSideBarRoute :: Generic SideBarRoute
 data AppRoute = AppRoute MainWindowRoute SideBarRoute
 derive instance genericAppRoute :: Generic AppRoute
 
+newtype UrlWrapper = UrlWrapper Url
+-- derive instance genericUrlWrapper :: Generic UrlWrapper
+instance eqUrlWrapper :: Eq UrlWrapper where
+  eq (UrlWrapper url) (UrlWrapper url') = url.path == url'.path && url.query == url'.query
+instance showUrlWrapper :: Show UrlWrapper where
+  show (UrlWrapper url) = "UrlWrapper { path: " <> show url.path <> ", query: " <> show url.query <> " }"
+
+toUrl' :: forall a. Router a -> a -> UrlWrapper
+toUrl' r o = UrlWrapper $ toUrl r o
 
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
                       , console :: CONSOLE
                       , testOutput :: TESTOUTPUT | e
                       ) Unit
-main = runTest $ suite "Test" do
-  let
-    router' :: forall a e'. (Generic a) =>
-      Proxy a ->
-      (Router a -> Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit) ->
-      Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit
-    router' p t = (case router p of
-      Nothing -> failure ("Router generation failed")
-      (Just b)-> t b)
+main = runTest $ suite "Routing.Bob handles" do
+  suite "url path" do
+    let
+      router' :: forall a e'. (Generic a) =>
+        Proxy a ->
+        (Router a -> Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit) ->
+        Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit
+      router' p t = (case router p of
+        Nothing -> failure ("Router generation failed")
+        (Just b)-> t b)
 
-  test "router handles constructor with single, primitive value" do
-    let obj = PrimitivePositionalValue 8
-    router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
-      equal ("8") (toUrl r obj)
-      equal (Just obj) (fromUrl r "8"))
+    let
+      e s = { path: s, query: empty :: StrMap String }
+      e' = UrlWrapper <<< e
 
-  test "router parses whole input" do
-    let obj = PrimitivePositionalValue 8
-    router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
-      equal (Nothing) (fromUrl r "8/something-more"))
+    test "which contains constructor with single, primitive value" do
+      let obj = PrimitivePositionalValue 8
+      router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
+        equal (e' "8") (toUrl' r obj)
+        equal (Just obj) (fromUrl r (e "8")))
 
-  test "router handles construtor with multiple, primitive values" do
-    let obj = PrimitivePositionalValues 8 true 9
-    router' (Proxy :: Proxy PrimitivePositionalValues) (\r -> do
-      equal ("8/on/9") (toUrl r obj)
-      equal (Just obj) (fromUrl r "8/on/9"))
+    test "and consumes whole input" do
+      let obj = PrimitivePositionalValue 8
+      router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
+        equal (Nothing) (fromUrl r (e "8/something-more")))
 
-  test "bob handles multiple empty constructors" do
-    let fObj = FirstEmptyConstructor
-        sObj = SecondEmptyConstructor
-    router' (Proxy :: Proxy UnionOfEmptyConstructors) (\r -> do
-      equal ("first-empty-constructor") (toUrl r fObj)
-      equal ("second-empty-constructor") (toUrl r sObj)
+    test "which contains construtor with multiple, primitive values" do
+      let obj = PrimitivePositionalValues 8 true 9
+      router' (Proxy :: Proxy PrimitivePositionalValues) (\r -> do
+        equal (e' "8/on/9") (toUrl' r obj)
+        equal (Just obj) (fromUrl r (e "8/on/9")))
 
-      equal (Just fObj) (fromUrl r "first-empty-constructor")
-      equal (Just sObj) (fromUrl r "second-empty-constructor"))
+    test "which contains multiple empty constructors" do
+       let fObj = FirstEmptyConstructor
+           sObj = SecondEmptyConstructor
+       router' (Proxy :: Proxy UnionOfEmptyConstructors) (\r -> do
+         equal (e' "first-empty-constructor") (toUrl' r fObj)
+         equal (e' "second-empty-constructor") (toUrl' r sObj)
 
-  test "bob handles multiple non empty constructors" do
-    let fObj = FirstConstructor 8 true 9
-        sObj = SecondConstructor false
-    router' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\r -> do
-      equal ("first-constructor/8/on/9") (toUrl r fObj)
-      equal ("second-constructor/off") (toUrl r sObj)
+         equal (Just fObj) (fromUrl r (e "first-empty-constructor"))
+         equal (Just sObj) (fromUrl r (e "second-empty-constructor")))
 
-      equal (Just fObj) (fromUrl r "first-constructor/8/on/9")
-      equal (Just sObj) (fromUrl r "second-constructor/off"))
+    test "which contains multiple non empty constructors" do
+      let fObj = FirstConstructor 8 true 9
+          sObj = SecondConstructor false
+      router' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\r -> do
+        equal (e' "first-constructor/8/on/9") (toUrl' r fObj)
+        equal (e' "second-constructor/off") (toUrl' r sObj)
 
-  test "we can avoid router and use direct functions" do
-      equal (Just "first-constructor/8/on/9") (genericToUrl (FirstConstructor 8 true 9))
-      equal (Just "second-constructor/off") (genericToUrl (SecondConstructor false))
+        equal (Just fObj) (fromUrl r (e "first-constructor/8/on/9"))
+        equal (Just sObj) (fromUrl r (e "second-constructor/off")))
 
-      equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
-      equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
+    test "through generic helpers" do
+        equal
+          (Just <<< UrlWrapper <<< e $ "first-constructor/8/on/9")
+          (UrlWrapper <$> genericToUrl (FirstConstructor 8 true 9))
+        equal
+          (Just <<< UrlWrapper <<< e  $ "second-constructor/off")
+          (UrlWrapper <$> genericToUrl (SecondConstructor false))
 
-  test "router handles nested structure with primitive value" do
-    let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
-    router' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
-      equal ("8") (toUrl r obj)
-      equal (Just obj) (fromUrl r "8"))
+        equal (Just (FirstConstructor 8 true 9)) (genericFromUrl (e "first-constructor/8/on/9"))
+        equal (Just (SecondConstructor false)) (genericFromUrl (e "second-constructor/off"))
 
-  test "router handles nesteted structures with mutilple constructors" do
-    let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
-        sObj = SecondOuterConstructor (PrimitivePositionalValues 8 false 100)
+    test "which contains nested structure with primitive values" do
+      let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
+      router' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
+        equal (e' "8") (toUrl' r obj)
+        equal (Just obj) (fromUrl r (e "8")))
 
-    router' (Proxy :: Proxy NestedStructures) (\r -> do
-      equal ("first-outer-constructor/first-constructor/100/on/888") (toUrl r fObj)
-      equal (Just fObj) (fromUrl r "first-outer-constructor/first-constructor/100/on/888")
+    test "which contains nesteted structures with mutilple constructors" do
+      let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
+          sObj = SecondOuterConstructor (PrimitivePositionalValues 8 false 100)
 
-      equal ("second-outer-constructor/8/off/100") (toUrl r sObj)
-      equal (Just sObj) (fromUrl r "second-outer-constructor/8/off/100"))
+      router' (Proxy :: Proxy NestedStructures) (\r -> do
+        equal (e' "first-outer-constructor/first-constructor/100/on/888") (toUrl' r fObj)
+        equal (Just fObj) (fromUrl r (e "first-outer-constructor/first-constructor/100/on/888"))
 
-  test "router handles multiple nesteted structures with multiple constructors" do
-    router' (Proxy :: Proxy AppRoute) (\r -> do
-      equal ("profile/minimized") (toUrl r (AppRoute Profile Minimized)))
+        equal (e' "second-outer-constructor/8/off/100") (toUrl' r sObj)
+        equal (Just sObj) (fromUrl r (e "second-outer-constructor/8/off/100")))
 
-  test "router uses correct escaping for string values" do
-    let obj = StringValue "this/is?test#string"
-    router' (Proxy :: Proxy StringValue) (\r -> do
-      equal ("this%2Fis%3Ftest%23string") (toUrl r obj)
-      equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
+    test "which contains multiple nesteted structures with multiple constructors" do
+      router' (Proxy :: Proxy AppRoute) (\r -> do
+        equal (e' "profile/minimized") (toUrl' r (AppRoute Profile Minimized)))
+
+    test "and uses correct escaping for string values" do
+      let obj = StringValue "this/is?test#string"
+      router' (Proxy :: Proxy StringValue) (\r -> do
+        equal (e' "this%2Fis%3Ftest%23string") (toUrl' r obj)
+        equal (Just obj) (fromUrl r (e "this%2Fis%3Ftest%23string")))
   -- multipleParams :: forall r. UrlBoomerang r (HCons Params r)
   let
     pBmg =
@@ -221,26 +221,26 @@ main = runTest $ suite "Test" do
     multipleParams =
       pBmg <<< param "paramString" any <<< param "paramInt" int <<< param "paramBoolean" boolean
 
-  suite "Query parsing" do
-    test "single param parsing" do
+  suite "query parsing" do
+    test "with single param" do
       let
         query = fromFoldable [Tuple "param" "somevalue"]
         urlBmg = param "param" (manyNoneOf "")
-        url = { path: "/", query: query }
+        url = { path: "", query: query }
       equal
         (Just "somevalue")
         (parse urlBmg url)
 
-    test "multiple parameters parsing" do
+    test "with multiple parameters" do
       let
         query = fromFoldable [Tuple "paramInt" "8", Tuple "paramBoolean" "off", Tuple "paramString" "somestringvalue"]
-        url = { path: "/", query: query }
+        url = { path: "", query: query }
       equal
-        (parse multipleParams url)
         (Just $ params "somestringvalue" 8 false)
+        (parse multipleParams url)
 
-  suite "Query serialization" do
-    test "serialization" do
+  suite "query serialization" do
+    test "with correct values" do
       equal
         (Just <<< fromList $ (Tuple "paramBoolean" "off") : (Tuple "paramInt" "8") : (Tuple "paramString" "tes") : Nil)
         (_.query <$> (serialize multipleParams (params "tes" 8 false)))

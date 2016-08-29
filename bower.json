@@ -18,8 +18,9 @@
     "output"
   ],
   "dependencies": {
-    "purescript-boomerang": "1.0.0",
+    "purescript-boomerang": "^1.0.0",
     "purescript-maps": "1.0.0",
+    "purescript-nonempty": "^1.0.0",
     "purescript-prelude": "1.0.1",
     "purescript-unicode": "1.0.0"
   },
