@@ -1,0 +1,105 @@
+module Routing.Bob.UrlBoomerang where
+
+import Prelude
+import Data.Either (Either(Right, Left))
+import Data.Identity (Identity)
+import Data.Maybe (Maybe(Nothing, Just))
+import Data.StrMap (insert, pop, StrMap)
+import Data.Tuple (snd, Tuple(Tuple), fst)
+import Text.Boomerang.Combinators (maph)
+import Text.Boomerang.HStack (type (:-), (:-))
+import Text.Boomerang.Prim (runSerializer, Serializer(Serializer), Boomerang(Boomerang))
+import Text.Boomerang.String (many1NoneOf, string, StringBoomerang)
+import Text.Parsing.Parser (parseFailed, runParser, ParserT(ParserT), unParserT, PState(PState), Parser)
+
+-- we want to parse/serialize query and path at the same time
+type Url =
+  { path :: String
+  , query :: StrMap String
+  }
+
+type UrlBoomerang a b = Boomerang Url a b
+
+liftStringPrs :: forall p a. Parser String a -> Parser { path :: String | p } a
+liftStringPrs prs =
+  ParserT prs'
+ where
+  prs' (PState i) = do
+    result <- unParserT prs (PState { input: i.input.path, position: i.position })
+    pure $ (result { input = i.input { path = result.input }})
+
+liftStringSer :: forall p s s'. Serializer String s s' -> Serializer { path :: String | p } s s'
+liftStringSer (Serializer ser) =
+  Serializer ser'
+ where
+  ser' a = do
+    t <- ser a
+    let
+      f = fst t
+      f' r = r { path = f r.path }
+    pure (Tuple f' (snd t))
+
+liftStringBoomerang :: forall r r'. StringBoomerang r r' -> UrlBoomerang r r'
+liftStringBoomerang (Boomerang ps) =
+  Boomerang
+    { prs: liftStringPrs ps.prs
+    , ser: liftStringSer ps.ser
+    }
+
+param :: forall a r. String -> StringBoomerang r (a :- r) -> UrlBoomerang r (a :- r)
+param name (Boomerang valueBmg) =
+  Boomerang
+    { prs: prs
+    , ser: ser
+    }
+ where
+  prs :: ParserT Url Identity (r -> a :- r)
+  prs =
+    ParserT prs'
+   where
+    prs' (PState t) =
+      case pop name input.query of
+        Just (Tuple valueString query') ->
+          let ev = runParser valueString valueBmg.prs
+          in case ev of
+            Left e -> pure $ parseFailed input t.position ("Fail to parse param " <> name <> ".")
+            Right v -> pure
+              { input: (input {query = query'})
+              , result: Right v
+              , consumed: false
+              , position: t.position
+              }
+        Nothing -> pure $ parseFailed input t.position ("Mising param " <> name <> ".")
+     where
+      input = t.input
+
+  ser :: Serializer Url (a :- r) r
+  ser =
+    Serializer $ \v -> case runSerializer valueBmg.ser v of
+      Just (Tuple f rest) -> let v' = f "" in pure (Tuple (\r -> r { query = insert name v' r.query}) rest)
+      Nothing -> Nothing
+
+string' :: forall a. String -> UrlBoomerang a (String :- a)
+string' s = liftStringBoomerang (string s)
+
+boolean :: forall r. StringBoomerang r (Boolean :- r)
+boolean =
+  boolean' <<< (string "on" <> string "off")
+ where
+  boolean' :: forall s. StringBoomerang (String :- s) (Boolean :- s)
+  boolean' =
+    maph prs ser
+   where
+    prs "on" = true
+    prs _    = false
+
+    ser true  = Just "on"
+    ser false = Just "off"
+
+foreign import encodeURIComponent :: String -> String
+foreign import decodeURIComponent :: String -> String
+
+str :: forall r. StringBoomerang r (String :- r)
+str =
+  maph (decodeURIComponent) (Just <<< encodeURIComponent) <<< many1NoneOf "/?#"
+
