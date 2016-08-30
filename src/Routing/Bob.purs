@@ -6,7 +6,7 @@ import Control.Error.Util (hush)
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Data.Array (uncons)
 import Data.Foldable (class Foldable, foldr, foldlDefault, foldrDefault, fold)
-import Data.Generic (class Generic, GenericSignature(SigString, SigBoolean, SigInt, SigProd), GenericSpine(SString, SInt, SBoolean, SProd), toSpine, fromSpine, toSignature)
+import Data.Generic (class Generic, GenericSignature(SigRecord, SigString, SigBoolean, SigInt, SigProd), GenericSpine(SString, SInt, SBoolean, SProd), toSpine, fromSpine, toSignature)
 import Data.List (List(Cons, Nil), null, fromFoldable, concatMap, (:))
 import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
 import Data.Monoid (mempty)
@@ -16,11 +16,11 @@ import Data.String (split)
 import Data.Traversable (class Traversable, traverse, for)
 import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
-import Routing.Bob.UrlBoomerang (str, boolean, liftStringBoomerang, liftStringPrs, Url, UrlBoomerang)
+import Routing.Bob.UrlBoomerang (int, str, boolean, liftStringBoomerang, liftStringPrs, Url, UrlBoomerang)
 import Text.Boomerang.Combinators (maph, nil, cons, duck1)
 import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
 import Text.Boomerang.Prim (Boomerang(Boomerang), runSerializer)
-import Text.Boomerang.String (int, lit)
+import Text.Boomerang.String (lit)
 import Text.Parsing.Parser (runParser)
 import Text.Parsing.Parser.String (eof)
 import Type.Proxy (Proxy(Proxy))
@@ -44,37 +44,37 @@ anaM :: forall a f m. (Functor f, Monad m, Traversable f) => (a -> m (f a)) -> a
 anaM coalgM = ((map Fix) <<< traverse (anaM coalgM)) <=< coalgM
 
 -- subset of GenericSignature which is covered by this library
+type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
+
 data SigF r
   = SigProdF String (NonEmpty List (DataConstructorF r))
-  -- | SigRecordF (Array { recLabel :: String, recValue :: SigRecValue })
+--  | SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: r }))
   | SigBooleanF
   | SigIntF
   | SigStringF
 
-type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
-
-data SigRecValue
-  = SigRecInt
-  | SigRecBoolean
-
 instance functorSigF :: Functor SigF where
-  map f (SigProdF s a) = SigProdF s (map (\r -> r { sigValues=map f r.sigValues }) a)
+  map f (SigProdF s l) = SigProdF s (map (\r -> r { sigValues = map f r.sigValues }) l)
+--  map f (SigRecordF l) = SigRecordF (map (\r -> r { recValue = f r.recValue }) l)
   -- map _ (SigRecordF a) = SigRecordF a
   map _ SigBooleanF = SigBooleanF
   map _ SigIntF = SigIntF
   map _ SigStringF = SigStringF
 
 instance foldableSigF :: Foldable SigF where
-  foldMap f (SigProdF s a) =
-    fold <<< concatMap (\r -> map f r.sigValues) <<< (fromNonEmpty (:)) $ a
+  foldMap f (SigProdF s l) =
+    fold <<< concatMap (\r -> map f r.sigValues) <<< (fromNonEmpty (:)) $ l
+--  foldMap f (SigRecordF l) =
+--    fold <<< map (\r -> f r.recValue) <<< (fromNonEmpty (:)) $ l
   foldMap _ _ = mempty
   foldr f = foldrDefault f
   foldl f = foldlDefault f
 
 instance traversableSigF :: Traversable SigF where
-  traverse f (SigProdF s a) =
-    SigProdF s <$> for a (\r -> r { sigValues = _ } <$> for r.sigValues f)
-  -- traverse _ (SigRecordF a) = pure (SigRecordF a)
+  traverse f (SigProdF s l) =
+    SigProdF s <$> for l (\r -> r { sigValues = _ } <$> for r.sigValues f)
+--  traverse f (SigRecordF l) =
+--    SigRecordF <$> for l (\r -> r { recValue = _ } <$> f r.recValue)
   traverse _ SigBooleanF = pure SigBooleanF
   traverse _ SigIntF = pure SigIntF
   traverse _ SigStringF = pure SigStringF
@@ -86,6 +86,11 @@ fromGenericSignature (SigProd s a) = do
   pure $ SigProdF s (h :| fromFoldable t)
  where
   fromConstructor c = c { sigValues = fromFoldable $ map (_ $ unit) c.sigValues }
+-- fromGenericSignature (SigRecord a) = do
+--   {head: h, tail: t} <- uncons <<< map fromField $ a
+--   pure $ SigRecordF (h :| fromFoldable t)
+--  where
+--   fromField f = f { recValue = f.recValue unit }
 fromGenericSignature SigInt = Just SigIntF
 fromGenericSignature SigBoolean = Just SigBooleanF
 fromGenericSignature SigString = Just SigStringF
@@ -139,22 +144,24 @@ toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
     bmg | null t = constructorBmg
         | null constructor.sigValues = (constructorNameBmg <<< constructorBmg)
         | otherwise = constructorNameBmg <<< liftStringBoomerang (lit "/") <<< constructorBmg
+-- SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: r }))
+-- toSpineBoomerang (SigRecordF (h :| t)) = 
+
 toSpineBoomerang SigBooleanF =
-  liftStringBoomerang (maph SBoolean ser <<< boolean)
+  maph SBoolean ser <<< boolean
  where
   ser (SBoolean b) = Just b
   ser _            = Nothing
 toSpineBoomerang SigIntF =
-  liftStringBoomerang (maph SInt ser <<< int)
+  maph SInt ser <<< int
  where
   ser (SInt b) = Just b
   ser _        = Nothing
 toSpineBoomerang SigStringF =
-  liftStringBoomerang (maph SString ser <<< str)
+  maph SString ser <<< str
  where
   ser (SString s) = Just s
   ser _        = Nothing
--- SigRecord (Array { recLabel :: String, recValue :: Unit -> GenericSignature }) =
 
 parse :: forall a. UrlBoomerang HNil (a :- HNil) -> Url -> Maybe a
 parse (Boomerang b) tok = do

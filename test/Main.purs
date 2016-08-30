@@ -11,14 +11,14 @@ import Data.Maybe (Maybe(..))
 import Data.StrMap (empty, fromList, StrMap, fromFoldable)
 import Data.Tuple (Tuple(Tuple))
 import Routing.Bob (Router, serialize, parse, fromUrl, genericFromUrl, genericToUrl, router, toUrl)
-import Routing.Bob.UrlBoomerang (Url, param, boolean)
+import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang, Url, param, boolean, int)
 import Test.Unit (suite, failure, test, TIMER)
 import Test.Unit.Assert (equal)
 import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Main (runTest)
 import Text.Boomerang.Combinators (pureBmg)
 import Text.Boomerang.HStack (HCons(HCons), hCons, hArg)
-import Text.Boomerang.String (int, StringBoomerang, manyNoneOf)
+import Text.Boomerang.String (manyNoneOf)
 import Type.Proxy (Proxy(..))
 
 data BooleanIntRoute = BooleanIntRoute
@@ -96,8 +96,8 @@ instance showParams :: Show Params where
 params :: String -> Int -> Boolean -> Params
 params = ((Params <$> _) <$>  _) <$> {paramString: _, paramInt: _, paramBoolean: _ }
 
-any :: forall r. StringBoomerang r (HCons String r)
-any = manyNoneOf ""
+any :: forall r. UrlBoomerang r (HCons String r)
+any = liftStringBoomerang $ manyNoneOf ""
 
 -- regression tests
 
@@ -135,7 +135,7 @@ main = runTest $ suite "Routing.Bob handles" do
         (Just b)-> t b)
 
     let
-      e s = { path: s, query: empty :: StrMap String }
+      e s = { path: s, query: empty :: StrMap (Maybe String) }
       e' = UrlWrapper <<< e
 
     test "which contains constructor with single, primitive value" do
@@ -224,8 +224,8 @@ main = runTest $ suite "Routing.Bob handles" do
   suite "query parsing" do
     test "with single param" do
       let
-        query = fromFoldable [Tuple "param" "somevalue"]
-        urlBmg = param "param" (manyNoneOf "")
+        query = fromFoldable [Tuple "param" (Just "somevalue")]
+        urlBmg = param "param" (liftStringBoomerang $ manyNoneOf "")
         url = { path: "", query: query }
       equal
         (Just "somevalue")
@@ -233,7 +233,12 @@ main = runTest $ suite "Routing.Bob handles" do
 
     test "with multiple parameters" do
       let
-        query = fromFoldable [Tuple "paramInt" "8", Tuple "paramBoolean" "off", Tuple "paramString" "somestringvalue"]
+        query =
+          fromFoldable
+            [Tuple "paramInt" (Just "8")
+            , Tuple "paramBoolean" (Just "off")
+            , Tuple "paramString" (Just "somestringvalue")
+            ]
         url = { path: "", query: query }
       equal
         (Just $ params "somestringvalue" 8 false)
@@ -242,6 +247,6 @@ main = runTest $ suite "Routing.Bob handles" do
   suite "query serialization" do
     test "with correct values" do
       equal
-        (Just <<< fromList $ (Tuple "paramBoolean" "off") : (Tuple "paramInt" "8") : (Tuple "paramString" "tes") : Nil)
+        (Just <<< fromList $ (Tuple "paramBoolean" (Just "off")) : (Tuple "paramInt" (Just "8")) : (Tuple "paramString" (Just "tes")) : Nil)
         (_.query <$> (serialize multipleParams (params "tes" 8 false)))
 
