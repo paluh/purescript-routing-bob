@@ -16,7 +16,7 @@ import Data.String (split)
 import Data.Traversable (class Traversable, traverse, for)
 import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
-import Routing.Bob.UrlBoomerang (param, int, str, boolean, liftStringBoomerang, liftStringPrs, Url, UrlBoomerang)
+import Routing.Bob.UrlBoomerang (printURL, parseURL, param, int, str, boolean, liftStringBoomerang, liftStringPrs, Url, UrlBoomerang)
 import Text.Boomerang.Combinators (maph, nil, cons, duck1)
 import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
 import Text.Boomerang.Prim (Boomerang(Boomerang), runSerializer)
@@ -131,18 +131,20 @@ toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
       maph prs ser <<< arrayFromList <<< valuesBmg
      where
       prs = SProd constructor.sigConstructor
-      ser (SProd c values) | c == constructor.sigConstructor = Just values
-                           | otherwise = Nothing
-      ser _                = Nothing
+      ser (SProd c values)
+        | c == constructor.sigConstructor = Just values
+        | otherwise = Nothing
+      ser _ = Nothing
 
     constructorNameBmg =
       liftStringBoomerang (lit constructorName)
      where
       constructorName = serializeConstructorName constructor.sigConstructor
 
-    bmg | null t = constructorBmg
-        | null constructor.sigValues = constructorNameBmg <<< constructorBmg
-        | otherwise = constructorNameBmg <<< liftStringBoomerang (lit "/") <<< constructorBmg
+    bmg
+      | null t = constructorBmg
+      | null constructor.sigValues = constructorNameBmg <<< constructorBmg
+      | otherwise = constructorNameBmg <<< liftStringBoomerang (lit "/") <<< constructorBmg
 toSpineBoomerang (SigRecordF l) =
   maph SRecord ser <<< arrayFromList <<< foldr step nil l
  where
@@ -150,7 +152,9 @@ toSpineBoomerang (SigRecordF l) =
     cons <<< duck1 fieldBmg <<< r
    where
     fieldBmg =
-      maph { recLabel: e.recLabel, recValue: _} (Just <<< _.recValue) <<< lazy <<< param e.recLabel e.recValue
+      maph { recLabel: e.recLabel, recValue: _} (Just <<< _.recValue) <<<
+      lazy <<<
+      param e.recLabel e.recValue
   ser (SRecord a) = Just a
   ser _ = Nothing
 toSpineBoomerang SigBooleanF =
@@ -197,21 +201,17 @@ serializeConstructorName :: String -> String
 serializeConstructorName n =
   camelsToHyphens (fromMaybe n (Data.Array.last <<< split "." $ n))
 
-genericToUrl :: forall a. (Generic a) => a -> Maybe Url
+genericToUrl :: forall a. (Generic a) => a -> Maybe String
 genericToUrl a = do
   route <- bob (Proxy :: Proxy a)
-  serialize route a
+  url <- serialize route a
+  printURL url
 
-genericToUrlPath :: forall a. (Generic a) => a -> Maybe String
-genericToUrlPath a = _.path <$> genericToUrl a
-
-genericFromUrl :: forall a. (Generic a) => Url -> Maybe a
-genericFromUrl u = do
+genericFromUrl :: forall a. (Generic a) => String -> Maybe a
+genericFromUrl s = do
+  url <- parseURL s
   route <- bob (Proxy :: Proxy a)
-  parse route u
-
-genericFromUrlPath :: forall a. (Generic a) => String -> Maybe a
-genericFromUrlPath s = genericFromUrl { path: s, query: empty }
+  parse route url
 
 data Router a = Router (UrlBoomerang HNil (a :- HNil))
 
@@ -220,16 +220,10 @@ router p = do
   b <- bob p
   pure $ Router b
 
-toUrl :: forall a. Router a -> a -> Url
+toUrl :: forall a. Router a -> a -> String
 toUrl (Router bmg) a =
-  unsafePartial (case serialize bmg a of Just url -> url)
+  unsafePartial (case serialize bmg a >>= printURL of Just s -> s)
 
-toUrlPath :: forall a. Router a -> a -> String
-toUrlPath r a = let url = toUrl r a in url.path
-
-fromUrl :: forall a. Router a -> Url -> Maybe a
+fromUrl :: forall a. Router a -> String -> Maybe a
 fromUrl (Router bmg) url =
-  parse bmg url
-
-fromUrlPath :: forall a. Router a -> String -> Maybe a
-fromUrlPath r s = fromUrl r { path: s, query: empty }
+  parseURL url >>= parse bmg

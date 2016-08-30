@@ -1,6 +1,7 @@
 module Test.Main where
 
 import Prelude
+import Control.Error.Util (hush)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.AVar (AVAR)
 import Control.Monad.Eff (Eff)
@@ -9,7 +10,10 @@ import Data.Generic (gShow, class Generic, gEq)
 import Data.List (List(Nil), (:))
 import Data.Maybe (Maybe(..))
 import Data.StrMap (empty, fromList, StrMap, fromFoldable)
+import Data.String (dropWhile)
 import Data.Tuple (Tuple(Tuple))
+import Data.URI (Query(Query))
+import Data.URI.Query (parseQuery)
 import Routing.Bob (Router, serialize, parse, fromUrl, genericFromUrl, genericToUrl, router, toUrl)
 import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang, Url, param, boolean, int)
 import Test.Unit (suite, failure, test, TIMER)
@@ -19,6 +23,7 @@ import Test.Unit.Main (runTest)
 import Text.Boomerang.Combinators (pureBmg)
 import Text.Boomerang.HStack (HCons(HCons), hCons, hArg)
 import Text.Boomerang.String (manyNoneOf)
+import Text.Parsing.StringParser (runParser)
 import Type.Proxy (Proxy(..))
 
 data BooleanIntRoute = BooleanIntRoute
@@ -114,8 +119,8 @@ instance eqUrlWrapper :: Eq UrlWrapper where
 instance showUrlWrapper :: Show UrlWrapper where
   show (UrlWrapper url) = "UrlWrapper { path: " <> show url.path <> ", query: " <> show url.query <> " }"
 
-toUrl' :: forall a. Router a -> a -> UrlWrapper
-toUrl' r o = UrlWrapper $ toUrl r o
+-- toUrl' :: forall a. Router a -> a -> UrlWrapper
+-- toUrl' r o = UrlWrapper $ toUrl r o
 
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
@@ -140,77 +145,76 @@ main = runTest $ suite "Routing.Bob handles" do
     test "which contains constructor with single, primitive value" do
       let obj = PrimitivePositionalValue 8
       router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
-        equal (e' "8") (toUrl' r obj)
-        equal (Just obj) (fromUrl r (path "8")))
-
+        equal "8" (toUrl r obj)
+        equal (Just obj) (fromUrl r "8"))
     test "and consumes whole input" do
       let obj = PrimitivePositionalValue 8
       router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
-        equal (Nothing) (fromUrl r (path "8/something-more")))
+        equal (Nothing) (fromUrl r "8/something-more"))
 
     test "which contains construtor with multiple, primitive values" do
       let obj = PrimitivePositionalValues 8 true 9
       router' (Proxy :: Proxy PrimitivePositionalValues) (\r -> do
-        equal (e' "8/on/9") (toUrl' r obj)
-        equal (Just obj) (fromUrl r (path "8/on/9")))
+        equal "8/on/9" (toUrl r obj)
+        equal (Just obj) (fromUrl r "8/on/9"))
 
     test "which contains multiple empty constructors" do
        let fObj = FirstEmptyConstructor
            sObj = SecondEmptyConstructor
        router' (Proxy :: Proxy UnionOfEmptyConstructors) (\r -> do
-         equal (e' "first-empty-constructor") (toUrl' r fObj)
-         equal (e' "second-empty-constructor") (toUrl' r sObj)
+         equal "first-empty-constructor" (toUrl r fObj)
+         equal "second-empty-constructor" (toUrl r sObj)
 
-         equal (Just fObj) (fromUrl r (path "first-empty-constructor"))
-         equal (Just sObj) (fromUrl r (path "second-empty-constructor")))
+         equal (Just fObj) (fromUrl r "first-empty-constructor")
+         equal (Just sObj) (fromUrl r "second-empty-constructor"))
 
     test "which contains multiple non empty constructors" do
       let fObj = FirstConstructor 8 true 9
           sObj = SecondConstructor false
       router' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\r -> do
-        equal (e' "first-constructor/8/on/9") (toUrl' r fObj)
-        equal (e' "second-constructor/off") (toUrl' r sObj)
+        equal "first-constructor/8/on/9" (toUrl r fObj)
+        equal "second-constructor/off" (toUrl r sObj)
 
-        equal (Just fObj) (fromUrl r (path "first-constructor/8/on/9"))
-        equal (Just sObj) (fromUrl r (path "second-constructor/off")))
+        equal (Just fObj) (fromUrl r "first-constructor/8/on/9")
+        equal (Just sObj) (fromUrl r "second-constructor/off"))
 
     test "through generic helpers" do
         equal
-          (Just <<< UrlWrapper <<< path $ "first-constructor/8/on/9")
-          (UrlWrapper <$> genericToUrl (FirstConstructor 8 true 9))
+          (Just "first-constructor/8/on/9")
+          (genericToUrl (FirstConstructor 8 true 9))
         equal
-          (Just <<< UrlWrapper <<< path  $ "second-constructor/off")
-          (UrlWrapper <$> genericToUrl (SecondConstructor false))
+          (Just "second-constructor/off")
+          (genericToUrl (SecondConstructor false))
 
-        equal (Just (FirstConstructor 8 true 9)) (genericFromUrl (path "first-constructor/8/on/9"))
-        equal (Just (SecondConstructor false)) (genericFromUrl (path "second-constructor/off"))
+        equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
+        equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
 
     test "which contains nested structure with primitive values" do
       let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
       router' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
-        equal (e' "8") (toUrl' r obj)
-        equal (Just obj) (fromUrl r (path "8")))
+        equal "8" (toUrl r obj)
+        equal (Just obj) (fromUrl r "8"))
 
     test "which contains nesteted structures with mutilple constructors" do
       let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
           sObj = SecondOuterConstructor (PrimitivePositionalValues 8 false 100)
 
       router' (Proxy :: Proxy NestedStructures) (\r -> do
-        equal (e' "first-outer-constructor/first-constructor/100/on/888") (toUrl' r fObj)
-        equal (Just fObj) (fromUrl r (path "first-outer-constructor/first-constructor/100/on/888"))
+        equal "first-outer-constructor/first-constructor/100/on/888" (toUrl r fObj)
+        equal (Just fObj) (fromUrl r "first-outer-constructor/first-constructor/100/on/888")
 
-        equal (e' "second-outer-constructor/8/off/100") (toUrl' r sObj)
-        equal (Just sObj) (fromUrl r (path "second-outer-constructor/8/off/100")))
+        equal "second-outer-constructor/8/off/100" (toUrl r sObj)
+        equal (Just sObj) (fromUrl r "second-outer-constructor/8/off/100"))
 
     test "which contains multiple nesteted structures with multiple constructors" do
       router' (Proxy :: Proxy AppRoute) (\r -> do
-        equal (e' "profile/minimized") (toUrl' r (AppRoute Profile Minimized)))
+        equal "profile/minimized" (toUrl r (AppRoute Profile Minimized)))
 
     test "and uses correct escaping for string values" do
       let obj = StringValue "this/is?test#string"
       router' (Proxy :: Proxy StringValue) (\r -> do
-        equal (e' "this%2Fis%3Ftest%23string") (toUrl' r obj)
-        equal (Just obj) (fromUrl r (path "this%2Fis%3Ftest%23string")))
+        equal "this%2Fis%3Ftest%23string" (toUrl r obj)
+        equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
   -- multipleParams :: forall r. UrlBoomerang r (HCons Params r)
   let
     pBmg =
@@ -234,7 +238,7 @@ main = runTest $ suite "Routing.Bob handles" do
       let
         q =
           fromFoldable
-            [Tuple "paramInt" (Just "8")
+            [ Tuple "paramInt" (Just "8")
             , Tuple "paramBoolean" (Just "off")
             , Tuple "paramString" (Just "somestringvalue")
             ]
@@ -261,11 +265,13 @@ main = runTest $ suite "Routing.Bob handles" do
     suite "serialization" do
       test "through generic helper" do
         equal
-          (Just <<< UrlWrapper <<< query $ q)
-          (UrlWrapper <$> genericToUrl p)
+          (Just <<< Query $ q)
+          (genericToUrl p >>= (\q' -> hush <<< runParser parseQuery <<< dropWhile ('?' == _) $ q'))
 
     suite "parsing" do
-      test "through generic helper" do
+      test "through generic helper from String" do
         equal
           (Just p)
-          (genericFromUrl $ query q)
+          (genericFromUrl "?paramString=test&paramInt=8&paramBoolean=off")
+
+
