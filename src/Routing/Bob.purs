@@ -6,7 +6,7 @@ import Control.Error.Util (hush)
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Data.Array (uncons)
 import Data.Foldable (class Foldable, foldr, foldlDefault, foldrDefault, fold)
-import Data.Generic (class Generic, GenericSignature(SigRecord, SigString, SigBoolean, SigInt, SigProd), GenericSpine(SString, SInt, SBoolean, SProd), toSpine, fromSpine, toSignature)
+import Data.Generic (class Generic, GenericSignature(SigRecord, SigString, SigBoolean, SigInt, SigProd), GenericSpine(SRecord, SString, SInt, SBoolean, SProd), toSpine, fromSpine, toSignature)
 import Data.List (List(Cons, Nil), null, fromFoldable, concatMap, (:))
 import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
 import Data.Monoid (mempty)
@@ -16,7 +16,7 @@ import Data.String (split)
 import Data.Traversable (class Traversable, traverse, for)
 import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
-import Routing.Bob.UrlBoomerang (int, str, boolean, liftStringBoomerang, liftStringPrs, Url, UrlBoomerang)
+import Routing.Bob.UrlBoomerang (param, int, str, boolean, liftStringBoomerang, liftStringPrs, Url, UrlBoomerang)
 import Text.Boomerang.Combinators (maph, nil, cons, duck1)
 import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
 import Text.Boomerang.Prim (Boomerang(Boomerang), runSerializer)
@@ -48,15 +48,14 @@ type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
 
 data SigF r
   = SigProdF String (NonEmpty List (DataConstructorF r))
---  | SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: r }))
+  | SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: r }))
   | SigBooleanF
   | SigIntF
   | SigStringF
 
 instance functorSigF :: Functor SigF where
   map f (SigProdF s l) = SigProdF s (map (\r -> r { sigValues = map f r.sigValues }) l)
---  map f (SigRecordF l) = SigRecordF (map (\r -> r { recValue = f r.recValue }) l)
-  -- map _ (SigRecordF a) = SigRecordF a
+  map f (SigRecordF l) = SigRecordF (map (\r -> r { recValue = f r.recValue }) l)
   map _ SigBooleanF = SigBooleanF
   map _ SigIntF = SigIntF
   map _ SigStringF = SigStringF
@@ -64,8 +63,8 @@ instance functorSigF :: Functor SigF where
 instance foldableSigF :: Foldable SigF where
   foldMap f (SigProdF s l) =
     fold <<< concatMap (\r -> map f r.sigValues) <<< (fromNonEmpty (:)) $ l
---  foldMap f (SigRecordF l) =
---    fold <<< map (\r -> f r.recValue) <<< (fromNonEmpty (:)) $ l
+  foldMap f (SigRecordF l) =
+    fold <<< map (\r -> f r.recValue) <<< (fromNonEmpty (:)) $ l
   foldMap _ _ = mempty
   foldr f = foldrDefault f
   foldl f = foldlDefault f
@@ -73,8 +72,8 @@ instance foldableSigF :: Foldable SigF where
 instance traversableSigF :: Traversable SigF where
   traverse f (SigProdF s l) =
     SigProdF s <$> for l (\r -> r { sigValues = _ } <$> for r.sigValues f)
---  traverse f (SigRecordF l) =
---    SigRecordF <$> for l (\r -> r { recValue = _ } <$> f r.recValue)
+  traverse f (SigRecordF l) =
+    SigRecordF <$> for l (\r -> r { recValue = _ } <$> f r.recValue)
   traverse _ SigBooleanF = pure SigBooleanF
   traverse _ SigIntF = pure SigIntF
   traverse _ SigStringF = pure SigStringF
@@ -86,17 +85,27 @@ fromGenericSignature (SigProd s a) = do
   pure $ SigProdF s (h :| fromFoldable t)
  where
   fromConstructor c = c { sigValues = fromFoldable $ map (_ $ unit) c.sigValues }
--- fromGenericSignature (SigRecord a) = do
---   {head: h, tail: t} <- uncons <<< map fromField $ a
---   pure $ SigRecordF (h :| fromFoldable t)
---  where
---   fromField f = f { recValue = f.recValue unit }
+fromGenericSignature (SigRecord a) = do
+  {head: h, tail: t} <- uncons <<< map fromField $ a
+  pure $ SigRecordF (h :| fromFoldable t)
+ where
+  fromField f = f { recValue = f.recValue unit }
 fromGenericSignature SigInt = Just SigIntF
 fromGenericSignature SigBoolean = Just SigBooleanF
 fromGenericSignature SigString = Just SigStringF
 fromGenericSignature _ = Nothing
 
 type UrlBoomerangForGenericSpine r = UrlBoomerang r (GenericSpine :- r)
+
+lazy :: forall z y. UrlBoomerang (y :- z) ((Unit -> y) :- z)
+lazy = maph const (Just <<< (_ $ unit))
+
+arrayFromList :: forall t a tok. Boomerang tok (List a :- t) (Array a :- t)
+arrayFromList =
+  maph arrayFromFoldable (Just <<< fromFoldable)
+ where
+  -- very ineficient - will be replaced with next purescript-array release
+  arrayFromFoldable = foldr Data.Array.cons []
 
 toSpineBoomerang :: forall r. SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
 toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
@@ -109,12 +118,9 @@ toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
     valuesBmg =
       intersperce (liftStringBoomerang (lit "/")) <<< map (lazy <<< _) <<< _.sigValues $ constructor
      where
-      lazy :: forall z y. UrlBoomerang (y :- z) ((Unit -> y) :- z)
-      lazy = maph const (Just <<< (_ $ unit))
-
       intersperce :: forall tok a t. (forall r. Boomerang tok r r) ->
                                      List (Boomerang tok t (a :- t)) ->
-                                     Boomerang tok t ((List a) :- t)
+                                     Boomerang tok t (List a :- t)
       intersperce _ Nil = nil
       intersperce sep (Cons b t) =
         cons <<< duck1 b <<< foldr step nil t
@@ -124,13 +130,6 @@ toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
     constructorBmg =
       maph prs ser <<< arrayFromList <<< valuesBmg
      where
-      arrayFromList :: forall t a tok. Boomerang tok (List a :- t) (Array a :- t)
-      arrayFromList =
-        maph arrayFromFoldable (Just <<< fromFoldable)
-       where
-        -- very ineficient - will be replaced with next purescript-array release
-        arrayFromFoldable = foldr Data.Array.cons []
-
       prs = SProd constructor.sigConstructor
       ser (SProd c values) | c == constructor.sigConstructor = Just values
                            | otherwise = Nothing
@@ -142,11 +141,18 @@ toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
       constructorName = serializeConstructorName constructor.sigConstructor
 
     bmg | null t = constructorBmg
-        | null constructor.sigValues = (constructorNameBmg <<< constructorBmg)
+        | null constructor.sigValues = constructorNameBmg <<< constructorBmg
         | otherwise = constructorNameBmg <<< liftStringBoomerang (lit "/") <<< constructorBmg
--- SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: r }))
--- toSpineBoomerang (SigRecordF (h :| t)) = 
-
+toSpineBoomerang (SigRecordF l) =
+  maph SRecord ser <<< arrayFromList <<< foldr step nil l
+ where
+  step e r =
+    cons <<< duck1 fieldBmg <<< r
+   where
+    fieldBmg =
+      maph { recLabel: e.recLabel, recValue: _} (Just <<< _.recValue) <<< lazy <<< param e.recLabel e.recValue
+  ser (SRecord a) = Just a
+  ser _ = Nothing
 toSpineBoomerang SigBooleanF =
   maph SBoolean ser <<< boolean
  where

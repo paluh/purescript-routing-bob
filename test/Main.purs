@@ -89,7 +89,6 @@ newtype Params =
     }
 derive instance genericParms :: Generic Params
 derive instance eqParams :: Eq Params
-
 instance showParams :: Show Params where
   show = gShow
 
@@ -124,36 +123,36 @@ main :: forall e. Eff ( timer :: TIMER
                       , testOutput :: TESTOUTPUT | e
                       ) Unit
 main = runTest $ suite "Routing.Bob handles" do
+  let
+    path s = { path: s, query: empty :: StrMap (Maybe String) }
+    e' = UrlWrapper <<< path
+    query q = { path: "", query: q }
+  let
+    router' :: forall a e'. (Generic a) =>
+      Proxy a ->
+      (Router a -> Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit) ->
+      Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit
+    router' p t = (case router p of
+      Nothing -> failure ("Router generation failed")
+      (Just b)-> t b)
+
   suite "url path" do
-    let
-      router' :: forall a e'. (Generic a) =>
-        Proxy a ->
-        (Router a -> Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit) ->
-        Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit
-      router' p t = (case router p of
-        Nothing -> failure ("Router generation failed")
-        (Just b)-> t b)
-
-    let
-      e s = { path: s, query: empty :: StrMap (Maybe String) }
-      e' = UrlWrapper <<< e
-
     test "which contains constructor with single, primitive value" do
       let obj = PrimitivePositionalValue 8
       router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
         equal (e' "8") (toUrl' r obj)
-        equal (Just obj) (fromUrl r (e "8")))
+        equal (Just obj) (fromUrl r (path "8")))
 
     test "and consumes whole input" do
       let obj = PrimitivePositionalValue 8
       router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
-        equal (Nothing) (fromUrl r (e "8/something-more")))
+        equal (Nothing) (fromUrl r (path "8/something-more")))
 
     test "which contains construtor with multiple, primitive values" do
       let obj = PrimitivePositionalValues 8 true 9
       router' (Proxy :: Proxy PrimitivePositionalValues) (\r -> do
         equal (e' "8/on/9") (toUrl' r obj)
-        equal (Just obj) (fromUrl r (e "8/on/9")))
+        equal (Just obj) (fromUrl r (path "8/on/9")))
 
     test "which contains multiple empty constructors" do
        let fObj = FirstEmptyConstructor
@@ -162,8 +161,8 @@ main = runTest $ suite "Routing.Bob handles" do
          equal (e' "first-empty-constructor") (toUrl' r fObj)
          equal (e' "second-empty-constructor") (toUrl' r sObj)
 
-         equal (Just fObj) (fromUrl r (e "first-empty-constructor"))
-         equal (Just sObj) (fromUrl r (e "second-empty-constructor")))
+         equal (Just fObj) (fromUrl r (path "first-empty-constructor"))
+         equal (Just sObj) (fromUrl r (path "second-empty-constructor")))
 
     test "which contains multiple non empty constructors" do
       let fObj = FirstConstructor 8 true 9
@@ -172,25 +171,25 @@ main = runTest $ suite "Routing.Bob handles" do
         equal (e' "first-constructor/8/on/9") (toUrl' r fObj)
         equal (e' "second-constructor/off") (toUrl' r sObj)
 
-        equal (Just fObj) (fromUrl r (e "first-constructor/8/on/9"))
-        equal (Just sObj) (fromUrl r (e "second-constructor/off")))
+        equal (Just fObj) (fromUrl r (path "first-constructor/8/on/9"))
+        equal (Just sObj) (fromUrl r (path "second-constructor/off")))
 
     test "through generic helpers" do
         equal
-          (Just <<< UrlWrapper <<< e $ "first-constructor/8/on/9")
+          (Just <<< UrlWrapper <<< path $ "first-constructor/8/on/9")
           (UrlWrapper <$> genericToUrl (FirstConstructor 8 true 9))
         equal
-          (Just <<< UrlWrapper <<< e  $ "second-constructor/off")
+          (Just <<< UrlWrapper <<< path  $ "second-constructor/off")
           (UrlWrapper <$> genericToUrl (SecondConstructor false))
 
-        equal (Just (FirstConstructor 8 true 9)) (genericFromUrl (e "first-constructor/8/on/9"))
-        equal (Just (SecondConstructor false)) (genericFromUrl (e "second-constructor/off"))
+        equal (Just (FirstConstructor 8 true 9)) (genericFromUrl (path "first-constructor/8/on/9"))
+        equal (Just (SecondConstructor false)) (genericFromUrl (path "second-constructor/off"))
 
     test "which contains nested structure with primitive values" do
       let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
       router' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
         equal (e' "8") (toUrl' r obj)
-        equal (Just obj) (fromUrl r (e "8")))
+        equal (Just obj) (fromUrl r (path "8")))
 
     test "which contains nesteted structures with mutilple constructors" do
       let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
@@ -198,10 +197,10 @@ main = runTest $ suite "Routing.Bob handles" do
 
       router' (Proxy :: Proxy NestedStructures) (\r -> do
         equal (e' "first-outer-constructor/first-constructor/100/on/888") (toUrl' r fObj)
-        equal (Just fObj) (fromUrl r (e "first-outer-constructor/first-constructor/100/on/888"))
+        equal (Just fObj) (fromUrl r (path "first-outer-constructor/first-constructor/100/on/888"))
 
         equal (e' "second-outer-constructor/8/off/100") (toUrl' r sObj)
-        equal (Just sObj) (fromUrl r (e "second-outer-constructor/8/off/100")))
+        equal (Just sObj) (fromUrl r (path "second-outer-constructor/8/off/100")))
 
     test "which contains multiple nesteted structures with multiple constructors" do
       router' (Proxy :: Proxy AppRoute) (\r -> do
@@ -211,7 +210,7 @@ main = runTest $ suite "Routing.Bob handles" do
       let obj = StringValue "this/is?test#string"
       router' (Proxy :: Proxy StringValue) (\r -> do
         equal (e' "this%2Fis%3Ftest%23string") (toUrl' r obj)
-        equal (Just obj) (fromUrl r (e "this%2Fis%3Ftest%23string")))
+        equal (Just obj) (fromUrl r (path "this%2Fis%3Ftest%23string")))
   -- multipleParams :: forall r. UrlBoomerang r (HCons Params r)
   let
     pBmg =
@@ -224,22 +223,22 @@ main = runTest $ suite "Routing.Bob handles" do
   suite "query parsing" do
     test "with single param" do
       let
-        query = fromFoldable [Tuple "param" (Just "somevalue")]
+        q = fromFoldable [Tuple "param" (Just "somevalue")]
         urlBmg = param "param" (liftStringBoomerang $ manyNoneOf "")
-        url = { path: "", query: query }
+        url = query q
       equal
         (Just "somevalue")
         (parse urlBmg url)
 
     test "with multiple parameters" do
       let
-        query =
+        q =
           fromFoldable
             [Tuple "paramInt" (Just "8")
             , Tuple "paramBoolean" (Just "off")
             , Tuple "paramString" (Just "somestringvalue")
             ]
-        url = { path: "", query: query }
+        url = query q
       equal
         (Just $ params "somestringvalue" 8 false)
         (parse multipleParams url)
@@ -250,3 +249,23 @@ main = runTest $ suite "Routing.Bob handles" do
         (Just <<< fromList $ (Tuple "paramBoolean" (Just "off")) : (Tuple "paramInt" (Just "8")) : (Tuple "paramString" (Just "tes")) : Nil)
         (_.query <$> (serialize multipleParams (params "tes" 8 false)))
 
+  suite "query" do
+    let
+      q =
+        fromFoldable
+          [ Tuple "paramString" (Just "test")
+          , Tuple "paramInt" (Just "8")
+          , Tuple "paramBoolean" (Just "off")
+          ]
+      p = Params { paramBoolean: false, paramInt: 8, paramString: "test" }
+    suite "serialization" do
+      test "through generic helper" do
+        equal
+          (Just <<< UrlWrapper <<< query $ q)
+          (UrlWrapper <$> genericToUrl p)
+
+    suite "parsing" do
+      test "through generic helper" do
+        equal
+          (Just p)
+          (genericFromUrl $ query q)
