@@ -14,8 +14,8 @@ import Data.String (dropWhile)
 import Data.Tuple (Tuple(Tuple))
 import Data.URI (Query(Query))
 import Data.URI.Query (parseQuery)
-import Routing.Bob (Router, serialize, parse, fromUrl, genericFromUrl, genericToUrl, router, toUrl)
-import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang, Url, param, boolean, int)
+import Routing.Bob (Router, serialize, parse, fromUrl, genericFromUrl, genericToUrl, param, router, toUrl)
+import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang, boolean, int)
 import Test.Unit (suite, failure, test, TIMER)
 import Test.Unit.Assert (equal)
 import Test.Unit.Console (TESTOUTPUT)
@@ -86,6 +86,20 @@ instance eqStringValue :: Eq StringValue where
 instance showStringValue:: Show StringValue where
   show = gShow
 
+data SumWithInternalRecords
+  = FirstConstructorWithRecord
+      Int
+      { int1 :: Maybe Int
+      , string1 :: String
+      }
+  | SecondConstructorWithRecord
+      String
+      { int2 :: Maybe Int
+      , string2 :: String
+      , boolean2 :: Boolean
+      }
+derive instance genericSumWithInternalRecords :: Generic SumWithInternalRecords
+
 newtype Params =
   Params
     { paramString :: String
@@ -100,6 +114,17 @@ instance showParams :: Show Params where
 params :: String -> Int -> Boolean -> Params
 params = ((Params <$> _) <$>  _) <$> {paramString: _, paramInt: _, paramBoolean: _ }
 
+newtype ParamsWithOptionals =
+  ParamsWithOptionals
+    { optParamString :: Maybe String
+    , optParamInt :: Maybe Int
+    , optParamBoolean :: Maybe Boolean
+    }
+derive instance genericParamsWithOptionals :: Generic ParamsWithOptionals
+derive instance eqParamsWithOptionals :: Eq ParamsWithOptionals
+instance showParamsWithOptionals :: Show ParamsWithOptionals where
+  show = gShow
+
 any :: forall r. UrlBoomerang r (HCons String r)
 any = liftStringBoomerang $ manyNoneOf ""
 
@@ -112,16 +137,6 @@ derive instance genericSideBarRoute :: Generic SideBarRoute
 data AppRoute = AppRoute MainWindowRoute SideBarRoute
 derive instance genericAppRoute :: Generic AppRoute
 
-newtype UrlWrapper = UrlWrapper Url
--- derive instance genericUrlWrapper :: Generic UrlWrapper
-instance eqUrlWrapper :: Eq UrlWrapper where
-  eq (UrlWrapper url) (UrlWrapper url') = url.path == url'.path && url.query == url'.query
-instance showUrlWrapper :: Show UrlWrapper where
-  show (UrlWrapper url) = "UrlWrapper { path: " <> show url.path <> ", query: " <> show url.query <> " }"
-
--- toUrl' :: forall a. Router a -> a -> UrlWrapper
--- toUrl' r o = UrlWrapper $ toUrl r o
-
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
                       , console :: CONSOLE
@@ -130,7 +145,6 @@ main :: forall e. Eff ( timer :: TIMER
 main = runTest $ suite "Routing.Bob handles" do
   let
     path s = { path: s, query: empty :: StrMap (Maybe String) }
-    e' = UrlWrapper <<< path
     query q = { path: "", query: q }
   let
     router' :: forall a e'. (Generic a) =>
@@ -216,42 +230,77 @@ main = runTest $ suite "Routing.Bob handles" do
         equal "this%2Fis%3Ftest%23string" (toUrl r obj)
         equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
   -- multipleParams :: forall r. UrlBoomerang r (HCons Params r)
-  let
-    pBmg =
-      pureBmg
-        (hArg (hArg (hArg hCons)) params)
-        (\(HCons (Params r) t) -> Just (hCons r.paramString (hCons r.paramInt (hCons r.paramBoolean t))))
-    multipleParams =
-      pBmg <<< param "paramString" any <<< param "paramInt" int <<< param "paramBoolean" boolean
-
-  suite "query parsing" do
-    test "with single param" do
-      let
-        q = fromFoldable [Tuple "param" (Just "somevalue")]
-        urlBmg = param "param" (liftStringBoomerang $ manyNoneOf "")
-        url = query q
+  suite "Data.Maybe in different way" do
+    test "and Just constrcutor is not used" do
       equal
-        (Just "somevalue")
-        (parse urlBmg url)
-
-    test "with multiple parameters" do
-      let
-        q =
-          fromFoldable
-            [ Tuple "paramInt" (Just "8")
-            , Tuple "paramBoolean" (Just "off")
-            , Tuple "paramString" (Just "somestringvalue")
-            ]
-        url = query q
+        (Just "8")
+        (genericToUrl (Just 8))
       equal
-        (Just $ params "somestringvalue" 8 false)
-        (parse multipleParams url)
-
-  suite "query serialization" do
-    test "with correct values" do
+        (Just (Just 8))
+        (genericFromUrl "8")
+    test "and Nothing is just absent" do
+      let nothing = Nothing :: Maybe Int
       equal
-        (Just <<< fromList $ (Tuple "paramBoolean" (Just "off")) : (Tuple "paramInt" (Just "8")) : (Tuple "paramString" (Just "tes")) : Nil)
-        (_.query <$> (serialize multipleParams (params "tes" 8 false)))
+        (Just "")
+        (genericToUrl nothing)
+      equal
+        (Just nothing)
+        (genericFromUrl "")
+  -- let
+  --   pBmg =
+  --     pureBmg
+  --       (hArg (hArg (hArg hCons)) params)
+  --       (\(HCons (Params r) t) -> Just (hCons r.paramString (hCons r.paramInt (hCons r.paramBoolean t))))
+  --   multipleParams =
+  --     pBmg <<< param "paramString" any <<< param "paramInt" int <<< param "paramBoolean" boolean
+
+  -- suite "query parsing" do
+  --   test "with single param" do
+  --     let
+  --       q = fromFoldable [Tuple "param" (Just "somevalue")]
+  --       urlBmg = param "param" (liftStringBoomerang $ manyNoneOf "")
+  --       url = query q
+  --     equal
+  --       (Just "somevalue")
+  --       (parse urlBmg url)
+
+  --   test "with multiple parameters" do
+  --     let
+  --       q =
+  --         fromFoldable
+  --           [ Tuple "paramInt" (Just "8")
+  --           , Tuple "paramBoolean" (Just "off")
+  --           , Tuple "paramString" (Just "somestringvalue")
+  --           ]
+  --       url = query q
+  --     equal
+  --       (Just $ params "somestringvalue" 8 false)
+  --       (parse multipleParams url)
+
+  --suite "query serialization" do
+  --  test "with correct values" do
+  --    equal
+  --      (Just <<< fromList $ (Tuple "paramBoolean" (Just "off")) : (Tuple "paramInt" (Just "8")) : (Tuple "paramString" (Just "tes")) : Nil)
+  --      (_.query <$> (serialize multipleParams (params "tes" 8 false)))
+
+  suite "query with optional values" do
+    let
+      q =
+        fromFoldable
+          [ Tuple "optParamString" Nothing
+          , Tuple "optParamBoolean" (Just "off")
+          ]
+      p = ParamsWithOptionals { optParamBoolean: Just false, optParamInt: Nothing, optParamString: Nothing }
+    suite "parsing" do
+      test "through generic helper from String" do
+        equal
+          (Just p)
+          (genericFromUrl "?optParamString=&optParamBoolean=off")
+    suite "serialization" do
+      test "through generic helper from String" do
+        equal
+          (Just "?optParamBoolean=off")
+          (genericToUrl p)
 
   suite "query" do
     let
@@ -267,6 +316,13 @@ main = runTest $ suite "Routing.Bob handles" do
         equal
           (Just <<< Query $ q)
           (genericToUrl p >>= (\q' -> hush <<< runParser parseQuery <<< dropWhile ('?' == _) $ q'))
+      test "for constructor with records" do
+        let fObj = FirstConstructorWithRecord 8 { int1: Just 8, string1: "string1" }
+            sObj = SecondConstructorWithRecord "test" { int2: Nothing, string2: "string1", boolean2: false }
+
+        router' (Proxy :: Proxy SumWithInternalRecords) (\r -> do
+          equal "first-constructor-with-record/8/?string1=string1&int1=8" (toUrl r fObj)
+          equal "second-constructor-with-record/test/?string2=string1&int2&boolean2=off" (toUrl r sObj))
 
     suite "parsing" do
       test "through generic helper from String" do

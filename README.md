@@ -91,4 +91,28 @@ Just to give you a hint what this library does, let's copy some tests' fragments
 
     ```
 
+  * records are converted into query (there is still some error handling missing...)
+
+    ```purescript
+    data SumWithInternalRecords
+      = FirstConstructorWithRecord
+          Int
+          { int1 :: Int
+          , string1 :: String
+          }
+      | SecondConstructorWithRecord
+          String
+          { int2 :: Int
+          , string2 :: String
+          , boolean2 :: Boolean
+          }
+
+    let fObj = FirstConstructorWithRecord 8 { int1: 8, string1: "string1" }
+        sObj = SecondConstructorWithRecord "test" { int2: 8, string2: "string1", boolean2: false }
+
+    equal "first-constructor-with-record/8/?string1=string1&int1=8" (toUrl router fObj)
+    equal "second-constructor-with-record/test/?string2=string1&int2=8&boolean2=off" (toUrl router sObj))
+    ```
+
+
 You can check `test/Main.purs` for more examples... real docs comming soooooon ;-)

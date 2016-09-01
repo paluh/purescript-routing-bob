@@ -2,26 +2,33 @@ module Routing.Bob where
 
 import Prelude
 import Data.Array as Data.Array
-import Control.Error.Util (hush)
+import Control.Error.Util (note, hush)
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
+import Control.Monad.Except (except, ExceptT)
+import Control.Monad.Except.Trans (runExceptT, withExceptT)
+import Control.Monad.State (runState, State)
+import Control.Monad.State.Class (put, get)
+import Control.Monad.Trans (lift)
 import Data.Array (uncons)
 import Data.Foldable (class Foldable, foldr, foldlDefault, foldrDefault, fold)
 import Data.Generic (class Generic, GenericSignature(SigRecord, SigString, SigBoolean, SigInt, SigProd), GenericSpine(SRecord, SString, SInt, SBoolean, SProd), toSpine, fromSpine, toSignature)
+import Data.Identity (Identity)
 import Data.List (List(Cons, Nil), null, fromFoldable, concatMap, (:))
 import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
 import Data.Monoid (mempty)
 import Data.NonEmpty (fromNonEmpty, NonEmpty, (:|), foldMap1)
-import Data.StrMap (empty)
+import Data.StrMap (insert, pop, StrMap, empty)
 import Data.String (split)
 import Data.Traversable (class Traversable, traverse, for)
 import Data.Tuple (Tuple(Tuple))
+import Debug.Trace (traceAnyA, trace, spy)
 import Partial.Unsafe (unsafePartial)
-import Routing.Bob.UrlBoomerang (printURL, parseURL, param, int, str, boolean, liftStringBoomerang, liftStringPrs, Url, UrlBoomerang)
-import Text.Boomerang.Combinators (maph, nil, cons, duck1)
+import Routing.Bob.UrlBoomerang (Url, printURL, parseURL, int, str, boolean, liftStringBoomerang, liftStringPrs, UrlBoomerang)
+import Text.Boomerang.Combinators (pureBmg, maph, nil, cons, duck1)
 import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
-import Text.Boomerang.Prim (Boomerang(Boomerang), runSerializer)
+import Text.Boomerang.Prim (Serializer(Serializer), Boomerang(Boomerang), runSerializer)
 import Text.Boomerang.String (lit)
-import Text.Parsing.Parser (runParser)
+import Text.Parsing.Parser (ParseError(ParseError), PState(PState), ParserT(ParserT), runParser)
 import Text.Parsing.Parser.String (eof)
 import Type.Proxy (Proxy(Proxy))
 
@@ -36,6 +43,14 @@ unFix (Fix f) = f
 
 cata :: forall a f. Functor f => (f a -> a) -> Fix f -> a
 cata alg = alg <<< (cata alg <$> _) <<< unFix
+
+type RAlgArg f a =  f { f :: Fix f, a :: a }
+type RAlg f a = RAlgArg f a -> a
+para :: forall a f. Functor f => RAlg f a -> Fix f -> a
+para rAlg =
+  rAlg <<< (g <$> _) <<< unFix
+ where
+  g f = let a = (para rAlg f) in { f, a }
 
 ana :: forall a f. Functor f => (a -> f a) -> a -> Fix f
 ana coalg = Fix <<< (ana coalg <$> _) <<< coalg
@@ -107,16 +122,109 @@ arrayFromList =
   -- very ineficient - will be replaced with next purescript-array release
   arrayFromFoldable = foldr Data.Array.cons []
 
-toSpineBoomerang :: forall r. SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
-toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
+maybeIsoToSpineBoomerang ::
+  forall r.
+    String -> String -> UrlBoomerang r (GenericSpine :- r) -> UrlBoomerang r (GenericSpine :- r)
+maybeIsoToSpineBoomerang just nothing value =
+  (maph justPrs justSer <<< lazy <<< value ) <> (pureBmg (SProd nothing [] :- _) nothingSer)
+ where
+  justPrs v = SProd just [v]
+
+  justSer (SProd c [v]) | c == just = Just v
+  justSer _ = Nothing
+
+  nothingSer (SProd c _ :- r) | c == nothing = Just r
+  nothingSer _ = Nothing
+
+param :: forall a r. String -> { a :: UrlBoomerang r (a :- r), f :: Fix SigF } -> UrlBoomerang r (a :- r)
+param name { a: (Boomerang valueBmg), f: Fix f } =
+  Boomerang
+    { prs: prs
+    , ser: ser
+    }
+ where
+  isMaybe = case f of
+    (SigProdF "Data.Maybe.Maybe" _) -> true
+    otherwise -> false
+
+  prs :: ParserT Url Identity (r -> a :- r)
+  prs =
+    ParserT prs'
+   where
+    prs' (PState s) =
+      toParserTResult <<< flip runState s.input.query <<< runExceptT $ parse'
+     where
+      toParserTResult (Tuple result query) =
+        pure
+          { input: s.input { query = query }
+          , result
+          , consumed: false
+          , position: s.position
+          }
+
+      parse' :: ExceptT ParseError (State (StrMap (Maybe String))) (r -> a :- r)
+      parse' = do
+        query <- lift get
+        value <-
+          -- XXX: any type isomorphic to maybe should be handled here
+          if isMaybe
+            then
+              case pop name query of
+                Nothing -> pure ""
+                Just (Tuple Nothing _) -> pure ""
+                Just (Tuple (Just v) query') -> do
+                  lift (put query')
+                  spy (pure v)
+            else do
+              (Tuple maybeValue query') <- note' ("Mising param: " <> name <> ".") (pop name query)
+              lift (put query')
+              note' ("Param required: " <> name <> ".") maybeValue
+        url <- note' ("Incorrect uri encoded in param: " <> name <> ".") (parseURL value)
+        withExceptT
+          (\(ParseError pe) ->
+              (parseError ("Fail to parse param \"" <> name <> "\": " <> pe.message <> ".")))
+          (except $ (runParser url valueBmg.prs))
+       where
+        note':: forall m s. (Monad m) => String -> (Maybe s) -> ExceptT ParseError m s
+        note' m v =
+          except $ note (parseError m) v
+
+        parseError message = ParseError { message, position: s.position }
+
+  ser :: Serializer Url (a :- r) r
+  ser =
+    Serializer $ \v -> case runSerializer valueBmg.ser v of
+      Just (Tuple f rest) ->
+        let url = f { path: "", query: empty }
+            v' =
+              unsafePartial $
+                case printURL url of
+                  Just s -> s
+        in if isMaybe && v' == ""
+          then
+            pure (Tuple id rest)
+          else
+            pure (Tuple (\r -> r { query = insert name (Just v') r.query}) rest)
+      Nothing -> Nothing
+
+
+--toSpineBoomerang' :: forall r. SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
+toSpineBoomerang' ::
+  forall r.
+    RAlgArg SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
+toSpineBoomerang' (SigProdF _ (j@{ sigValues: (v : Nil) } :| (n@{ sigValues: Nil } : Nil))) =
+  maybeIsoToSpineBoomerang j.sigConstructor n.sigConstructor v.a
+toSpineBoomerang' (SigProdF _ (n@{ sigValues: Nil } :| (j@{ sigValues: (v : Nil) } : Nil))) =
+  maybeIsoToSpineBoomerang j.sigConstructor n.sigConstructor v.a
+toSpineBoomerang' (SigProdF _ cs@(h :| t)) =
   foldMap1 fromConstructor cs
  where
-  fromConstructor :: DataConstructorF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
+  -- fromConstructor :: DataConstructorF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
   fromConstructor constructor =
     bmg
    where
     valuesBmg =
-      intersperce (liftStringBoomerang (lit "/")) <<< map (lazy <<< _) <<< _.sigValues $ constructor
+      intersperce (liftStringBoomerang (lit "/")) <<< map (lazy <<< _) <<< map _.a <<< _.sigValues $ constructor
      where
       intersperce :: forall tok a t. (forall r. Boomerang tok r r) ->
                                      List (Boomerang tok t (a :- t)) ->
@@ -145,29 +253,32 @@ toSpineBoomerang s@(SigProdF _ cs@(h :| t)) =
       | null t = constructorBmg
       | null constructor.sigValues = constructorNameBmg <<< constructorBmg
       | otherwise = constructorNameBmg <<< liftStringBoomerang (lit "/") <<< constructorBmg
-toSpineBoomerang (SigRecordF l) =
+toSpineBoomerang' (SigRecordF l) =
   maph SRecord ser <<< arrayFromList <<< foldr step nil l
  where
   step e r =
     cons <<< duck1 fieldBmg <<< r
    where
     fieldBmg =
-      maph { recLabel: e.recLabel, recValue: _} (Just <<< _.recValue) <<<
-      lazy <<<
-      param e.recLabel e.recValue
+      maph { recLabel: e.recLabel, recValue: _} (Just <<< _.recValue) <<< lazy <<< param e.recLabel e.recValue
+    -- param' l { f, a } =
+    --     (SProd "Data.Maybe" v) ->
+
+    --     otherwise -> param l v
+
   ser (SRecord a) = Just a
   ser _ = Nothing
-toSpineBoomerang SigBooleanF =
+toSpineBoomerang' SigBooleanF =
   maph SBoolean ser <<< boolean
  where
   ser (SBoolean b) = Just b
   ser _            = Nothing
-toSpineBoomerang SigIntF =
+toSpineBoomerang' SigIntF =
   maph SInt ser <<< int
  where
   ser (SInt b) = Just b
   ser _        = Nothing
-toSpineBoomerang SigStringF =
+toSpineBoomerang' SigStringF =
   maph SString ser <<< str
  where
   ser (SString s) = Just s
@@ -189,7 +300,7 @@ serialize (Boomerang b) s = do
 
 bob :: forall a r. (Generic a) => Proxy a -> Maybe (UrlBoomerang r (a :- r))
 bob p = do
-  sb <- cata toSpineBoomerang <$> (anaM fromGenericSignature (toSignature p))
+  sb <- para toSpineBoomerang' <$> (anaM fromGenericSignature (toSignature p))
   pure (maph prs (\v -> Just (Just v)) <<< maph fromSpine (toSpine <$> _) <<< sb)
  where
   prs (Just s) = s
