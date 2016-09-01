@@ -21,7 +21,6 @@ import Data.StrMap (insert, pop, StrMap, empty)
 import Data.String (split)
 import Data.Traversable (class Traversable, traverse, for)
 import Data.Tuple (Tuple(Tuple))
-import Debug.Trace (traceAnyA, trace, spy)
 import Partial.Unsafe (unsafePartial)
 import Routing.Bob.UrlBoomerang (Url, printURL, parseURL, int, str, boolean, liftStringBoomerang, liftStringPrs, UrlBoomerang)
 import Text.Boomerang.Combinators (pureBmg, maph, nil, cons, duck1)
@@ -174,7 +173,7 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
                 Just (Tuple Nothing _) -> pure ""
                 Just (Tuple (Just v) query') -> do
                   lift (put query')
-                  spy (pure v)
+                  pure v
             else do
               (Tuple maybeValue query') <- note' ("Mising param: " <> name <> ".") (pop name query)
               lift (put query')
@@ -195,28 +194,29 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
   ser =
     Serializer $ \v -> case runSerializer valueBmg.ser v of
       Just (Tuple f rest) ->
-        let url = f { path: "", query: empty }
-            v' =
-              unsafePartial $
-                case printURL url of
-                  Just s -> s
-        in if isMaybe && v' == ""
-          then
-            pure (Tuple id rest)
-          else
-            pure (Tuple (\r -> r { query = insert name (Just v') r.query}) rest)
+        let
+          url = f { path: "", query: empty }
+          v' =
+            unsafePartial $
+              case printURL url of
+                Just s -> s
+        in
+          if isMaybe && v' == ""
+            then
+              pure (Tuple id rest)
+            else
+              pure (Tuple (\r -> r { query = insert name (Just v') r.query}) rest)
       Nothing -> Nothing
 
 
---toSpineBoomerang' :: forall r. SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
-toSpineBoomerang' ::
+toSpineBoomerang ::
   forall r.
     RAlgArg SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
-toSpineBoomerang' (SigProdF _ (j@{ sigValues: (v : Nil) } :| (n@{ sigValues: Nil } : Nil))) =
+toSpineBoomerang (SigProdF _ (j@{ sigValues: (v : Nil) } :| (n@{ sigValues: Nil } : Nil))) =
   maybeIsoToSpineBoomerang j.sigConstructor n.sigConstructor v.a
-toSpineBoomerang' (SigProdF _ (n@{ sigValues: Nil } :| (j@{ sigValues: (v : Nil) } : Nil))) =
+toSpineBoomerang (SigProdF _ (n@{ sigValues: Nil } :| (j@{ sigValues: (v : Nil) } : Nil))) =
   maybeIsoToSpineBoomerang j.sigConstructor n.sigConstructor v.a
-toSpineBoomerang' (SigProdF _ cs@(h :| t)) =
+toSpineBoomerang (SigProdF _ cs@(h :| t)) =
   foldMap1 fromConstructor cs
  where
   -- fromConstructor :: DataConstructorF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
@@ -253,7 +253,7 @@ toSpineBoomerang' (SigProdF _ cs@(h :| t)) =
       | null t = constructorBmg
       | null constructor.sigValues = constructorNameBmg <<< constructorBmg
       | otherwise = constructorNameBmg <<< liftStringBoomerang (lit "/") <<< constructorBmg
-toSpineBoomerang' (SigRecordF l) =
+toSpineBoomerang (SigRecordF l) =
   maph SRecord ser <<< arrayFromList <<< foldr step nil l
  where
   step e r =
@@ -268,17 +268,17 @@ toSpineBoomerang' (SigRecordF l) =
 
   ser (SRecord a) = Just a
   ser _ = Nothing
-toSpineBoomerang' SigBooleanF =
+toSpineBoomerang SigBooleanF =
   maph SBoolean ser <<< boolean
  where
   ser (SBoolean b) = Just b
   ser _            = Nothing
-toSpineBoomerang' SigIntF =
+toSpineBoomerang SigIntF =
   maph SInt ser <<< int
  where
   ser (SInt b) = Just b
   ser _        = Nothing
-toSpineBoomerang' SigStringF =
+toSpineBoomerang SigStringF =
   maph SString ser <<< str
  where
   ser (SString s) = Just s
@@ -300,7 +300,7 @@ serialize (Boomerang b) s = do
 
 bob :: forall a r. (Generic a) => Proxy a -> Maybe (UrlBoomerang r (a :- r))
 bob p = do
-  sb <- para toSpineBoomerang' <$> (anaM fromGenericSignature (toSignature p))
+  sb <- para toSpineBoomerang <$> (anaM fromGenericSignature (toSignature p))
   pure (maph prs (\v -> Just (Just v)) <<< maph fromSpine (toSpine <$> _) <<< sb)
  where
   prs (Just s) = s
