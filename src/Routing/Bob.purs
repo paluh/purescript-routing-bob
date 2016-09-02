@@ -135,6 +135,7 @@ maybeIsoToSpineBoomerang just nothing value =
   nothingSer (SProd c _ :- r) | c == nothing = Just r
   nothingSer _ = Nothing
 
+-- make query parameter boomerang
 param :: forall a r. String -> { a :: UrlBoomerang r (a :- r), f :: Fix SigF } -> UrlBoomerang r (a :- r)
 param name { a: (Boomerang valueBmg), f: Fix f } =
   Boomerang

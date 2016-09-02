@@ -17,14 +17,6 @@ When it will grow up maybe it will became `purescript-boomerang-routing`.
 
 Currently you can generate routes only for some subset of purescript types - if you want to extend this set or have proposition how to encode other types, I'm really open to merge pull requests.
 
-Url's are encoded/parsed using `purescript-uri` library (wich is compilant with RFC 3986). Query values in this library are represented as Maybe values (so it's impossible to repeat given key to encode list of values) and values are defined with required `=` sign - I mean:
-
-  * `?key1=` - this encodes empty key1
-
-  * `?` - this encodes empty key1
-
-  * `?key1` - this is incorrect encoding
-
 
 ## Usage
 
