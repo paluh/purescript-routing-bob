@@ -17,6 +17,15 @@ When it will grow up maybe it will became `purescript-boomerang-routing`.
 
 Currently you can generate routes only for some subset of purescript types - if you want to extend this set or have proposition how to encode other types, I'm really open to merge pull requests.
 
+Url's are encoded/parsed using `purescript-uri` library (wich is compilant with RFC 3986). Query values in this library are represented as Maybe values (so it's impossible to repeat given key to encode list of values) and values are defined with required `=` sign - I mean:
+
+    * `?key1=` - this encodes empty key1
+
+    * `?` - this encodes empty key1
+
+    * `?key1` - this is incorrect encoding
+
+
 ## Usage
 
 Just to give you a hint what this library does, let's copy some tests' fragments (sorry for long data types and constructor names):
@@ -91,7 +100,7 @@ Just to give you a hint what this library does, let's copy some tests' fragments
 
     ```
 
-  * records are converted into query (there is still some error handling missing...)
+  * records are converted into query (there is still some error handling missing...):
 
     ```purescript
     data SumWithInternalRecords
@@ -112,6 +121,31 @@ Just to give you a hint what this library does, let's copy some tests' fragments
 
     equal "first-constructor-with-record/8/?string1=string1&int1=8" (toUrl router fObj)
     equal "second-constructor-with-record/test/?string2=string1&int2=8&boolean2=off" (toUrl router sObj))
+    ```
+
+  * data types isomorphic to `Data.Maybe.Maybe` are treated as optional values in queries:
+
+    ```purescript
+    data Optional a = Value a | Missing
+    derive instance genericOptional :: Generic a => Generic (Optional a)
+
+    newtype ParamsWithOptionals =
+      ParamsWithOptionals
+        { optParamString :: Optional String
+        , optParamInt :: Optional Int
+        , optParamBoolean :: Optional Boolean
+        }
+    derive instance genericParamsWithOptionals :: Generic ParamsWithOptionals
+
+    ...
+
+    let fObj = ParamsWithOptionals { optParamString: Value "test", optParamInt: Missing, optParamBoolean: Missing}
+        sObj = ParamsWithOptionals { optParamString: Missing, optParamInt: Value 8, optParamBoolean: Missing}
+
+    ...
+
+    equal "?optParamString=test" (toUrl r fObj)
+    equal (Just sObj) (fromUrl r "?optParamInt=8&optParamBoolean="))
     ```
 
 
