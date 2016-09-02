@@ -113,11 +113,28 @@ instance showParams :: Show Params where
 params :: String -> Int -> Boolean -> Params
 params = ((Params <$> _) <$>  _) <$> {paramString: _, paramInt: _, paramBoolean: _ }
 
-newtype ParamsWithOptionals =
-  ParamsWithOptionals
+newtype ParamsWithMaybes =
+  ParamsWithMaybes
     { optParamString :: Maybe String
     , optParamInt :: Maybe Int
     , optParamBoolean :: Maybe Boolean
+    }
+derive instance genericParamsWithMaybes :: Generic ParamsWithMaybes
+derive instance eqParamsWithMaybes :: Eq ParamsWithMaybes
+instance showParamsWithMaybes :: Show ParamsWithMaybes where
+  show = gShow
+
+data Optional a = Value a | Missing
+derive instance genericOptional :: Generic a => Generic (Optional a)
+derive instance eqOptional :: Eq a => Eq (Optional a)
+instance showOptional :: Generic a => Show (Optional a) where
+  show = gShow
+
+newtype ParamsWithOptionals =
+  ParamsWithOptionals
+    { optParamString :: Optional String
+    , optParamInt :: Optional Int
+    , optParamBoolean :: Optional Boolean
     }
 derive instance genericParamsWithOptionals :: Generic ParamsWithOptionals
 derive instance eqParamsWithOptionals :: Eq ParamsWithOptionals
@@ -289,7 +306,7 @@ main = runTest $ suite "Routing.Bob handles" do
           [ Tuple "optParamString" Nothing
           , Tuple "optParamBoolean" (Just "off")
           ]
-      p = ParamsWithOptionals { optParamBoolean: Just false, optParamInt: Nothing, optParamString: Nothing }
+      p = ParamsWithMaybes { optParamBoolean: Just false, optParamInt: Nothing, optParamString: Nothing }
     suite "parsing" do
       test "through generic helper from String" do
         equal
@@ -315,13 +332,20 @@ main = runTest $ suite "Routing.Bob handles" do
         equal
           (Just <<< Query $ q)
           (genericToUrl p >>= (\q' -> hush <<< runParser parseQuery <<< dropWhile ('?' == _) $ q'))
-      test "for constructor with records" do
+      test "for constructor with records and maybe values" do
         let fObj = FirstConstructorWithRecord 8 { int1: Just 8, string1: "string1value" }
             sObj = SecondConstructorWithRecord "test" { int2: Nothing, string2: "string2value", boolean2: false }
 
         router' (Proxy :: Proxy SumWithInternalRecords) (\r -> do
           equal "first-constructor-with-record/8/?string1=string1value&int1=8" (toUrl r fObj)
           equal "second-constructor-with-record/test/?string2=string2value&boolean2=off" (toUrl r sObj))
+      test "for constructor with records and values isomorphic to maybe" do
+        let fObj = ParamsWithOptionals { optParamString: Value "test", optParamInt: Missing, optParamBoolean: Missing}
+            sObj = ParamsWithOptionals { optParamString: Missing, optParamInt: Value 8, optParamBoolean: Missing}
+
+        router' (Proxy :: Proxy ParamsWithOptionals) (\r -> do
+          equal "?optParamString=test" (toUrl r fObj)
+          equal (Just sObj) (fromUrl r "?optParamInt=8&optParamBoolean="))
 
     suite "parsing" do
       test "through generic helper from String" do

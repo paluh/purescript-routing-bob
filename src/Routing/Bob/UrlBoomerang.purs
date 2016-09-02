@@ -3,26 +3,18 @@ module Routing.Bob.UrlBoomerang where
 import Prelude
 import Text.Boomerang.String as Text.Boomerang.String
 import Text.Parsing.StringParser as StringParser
-import Control.Error.Util (note, hush)
-import Control.Monad.Except (ExceptT, runExceptT, except)
-import Control.Monad.Except.Trans (withExceptT)
-import Control.Monad.State (State, runState)
-import Control.Monad.State.Class (get, put)
-import Control.Monad.Trans (lift)
+import Control.Error.Util (hush)
 import Data.Either (Either(Left, Right))
-import Data.Generic (GenericSignature)
-import Data.Identity (Identity)
 import Data.Maybe (Maybe(Nothing, Just))
-import Data.StrMap (empty, insert, pop, StrMap)
+import Data.StrMap (StrMap, empty)
 import Data.Tuple (snd, Tuple(Tuple), fst)
 import Data.URI (Query(Query), RelativePart(RelativePart), RelativeRef(RelativeRef), printRelativeRef, runParseRelativeRef)
 import Data.URI.RelativePart (parseRelativePart, printRelativePart)
-import Partial.Unsafe (unsafePartial)
 import Text.Boomerang.Combinators (maph)
 import Text.Boomerang.HStack (type (:-), (:-))
-import Text.Boomerang.Prim (runSerializer, Serializer(Serializer), Boomerang(Boomerang))
+import Text.Boomerang.Prim (Boomerang(Boomerang), Serializer(Serializer))
 import Text.Boomerang.String (many1NoneOf, string, StringBoomerang)
-import Text.Parsing.Parser (Parser, PState(PState), ParseError(ParseError), ParserT(ParserT), runParser, unParserT)
+import Text.Parsing.Parser (Parser, PState(PState), ParserT(ParserT), unParserT)
 
 -- we want to parse/serialize query and path at the same time
 type Url =

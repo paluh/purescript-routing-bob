@@ -14,7 +14,7 @@ import Data.Foldable (class Foldable, foldr, foldlDefault, foldrDefault, fold)
 import Data.Generic (class Generic, GenericSignature(SigRecord, SigString, SigBoolean, SigInt, SigProd), GenericSpine(SRecord, SString, SInt, SBoolean, SProd), toSpine, fromSpine, toSignature)
 import Data.Identity (Identity)
 import Data.List (List(Cons, Nil), null, fromFoldable, concatMap, (:))
-import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
+import Data.Maybe (fromJust, Maybe(Just, Nothing), fromMaybe)
 import Data.Monoid (mempty)
 import Data.NonEmpty (fromNonEmpty, NonEmpty, (:|), foldMap1)
 import Data.StrMap (insert, pop, StrMap, empty)
@@ -142,9 +142,15 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
     , ser: ser
     }
  where
-  isMaybe = case f of
-    (SigProdF "Data.Maybe.Maybe" _) -> true
-    otherwise -> false
+  parseMaybeIso sigF@(SigProdF _ (j@{ sigValues: (v : Nil) } :| (n@{ sigValues: Nil } : Nil))) =
+    Just { sigF: sigF, just: j.sigConstructor, nothing: n.sigConstructor, value: v}
+  parseMaybeIso sigF@(SigProdF _ (n@{ sigValues: Nil } :| (j@{ sigValues: (v : Nil) } : Nil))) =
+    Just { sigF: sigF, just: j.sigConstructor, nothing: n.sigConstructor, value: v}
+  parseMaybeIso _ = Nothing
+
+  serializeNothing c sigF =
+    let sb = para toSpineBoomerang (Fix sigF)
+    in unsafePartial $ fromJust $ (serialize sb (SProd c [])) >>= printURL
 
   prs :: ParserT Url Identity (r -> a :- r)
   prs =
@@ -166,16 +172,20 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
         query <- lift get
         value <-
           -- XXX: any type isomorphic to maybe should be handled here
-          if isMaybe
-            then
+          case parseMaybeIso f of
+            Just c ->
               case pop name query of
-                Nothing -> pure ""
-                Just (Tuple Nothing _) -> pure ""
+                -- XXX: don't use arbitrary empty value encoding: ""
+                --      serialize Nothing to get this value
+                Nothing -> pure (serializeNothing c.nothing c.sigF)
+                Just (Tuple Nothing query') -> do
+                  lift (put query')
+                  pure (serializeNothing c.nothing c.sigF)
                 Just (Tuple (Just v) query') -> do
                   lift (put query')
                   pure v
-            else do
-              (Tuple maybeValue query') <- note' ("Mising param: " <> name <> ".") (pop name query)
+            Nothing -> do
+              Tuple maybeValue query' <- note' ("Mising param: " <> name <> ".") (pop name query)
               lift (put query')
               note' ("Param required: " <> name <> ".") maybeValue
         url <- note' ("Incorrect uri encoded in param: " <> name <> ".") (parseURL value)
@@ -193,19 +203,23 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
   ser :: Serializer Url (a :- r) r
   ser =
     Serializer $ \v -> case runSerializer valueBmg.ser v of
-      Just (Tuple f rest) ->
+      Just (Tuple sf rest) ->
         let
-          url = f { path: "", query: empty }
+          url = sf { path: "", query: empty }
           v' =
             unsafePartial $
               case printURL url of
                 Just s -> s
+          r' = pure (Tuple (\r -> r { query = insert name (Just v') r.query}) rest)
         in
-          if isMaybe && v' == ""
-            then
-              pure (Tuple id rest)
-            else
-              pure (Tuple (\r -> r { query = insert name (Just v') r.query}) rest)
+          case parseMaybeIso f of
+            Just c ->
+              if v' == serializeNothing c.nothing c.sigF
+                then
+                  pure (Tuple id rest)
+                else
+                  r'
+            Nothing -> r'
       Nothing -> Nothing
 
 
