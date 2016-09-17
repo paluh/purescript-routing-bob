@@ -7,13 +7,16 @@ import Control.Monad.Aff.AVar (AVAR)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Data.Generic (gShow, class Generic, gEq)
+import Data.List (List(Nil), singleton, (:))
 import Data.Maybe (Maybe(..))
 import Data.StrMap (StrMap, fromFoldable, empty)
 import Data.String (dropWhile)
 import Data.Tuple (Tuple(Tuple))
 import Data.URI (Query(Query))
 import Data.URI.Query (parseQuery)
-import Routing.Bob (serialize, parse, Router, Fix(Fix), SigF(SigBooleanF, SigIntF, SigStringF), genericFromUrl, toUrl, genericToUrl, param, fromUrl, router)
+import Routing.Bob (serialize, parse, Router, genericFromUrl, toUrl, genericToUrl, param, fromUrl, router)
+import Routing.Bob.RecursionSchemes (Fix(Fix))
+import Routing.Bob.Signature (SigF(SigIntF, SigBooleanF, SigStringF))
 import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang, boolean, int)
 import Test.Unit (suite, failure, test, TIMER)
 import Test.Unit.Assert (equal)
@@ -273,7 +276,7 @@ main = runTest $ suite "Routing.Bob handles" do
   suite "query parsing" do
     test "with single param" do
       let
-        q = fromFoldable [Tuple "param" (Just "somevalue")]
+        q = fromFoldable [Tuple "param" (singleton "somevalue")]
         urlBmg = param "param" { a: (liftStringBoomerang $ manyNoneOf ""), f: Fix SigStringF }
         url = query q
       equal
@@ -284,9 +287,9 @@ main = runTest $ suite "Routing.Bob handles" do
       let
         q =
           fromFoldable
-            [ Tuple "paramInt" (Just "8")
-            , Tuple "paramBoolean" (Just "off")
-            , Tuple "paramString" (Just "somestringvalue")
+            [ Tuple "paramInt" (singleton "8")
+            , Tuple "paramBoolean" (singleton "off")
+            , Tuple "paramString" (singleton "somestringvalue")
             ]
         url = query q
       equal
@@ -296,7 +299,7 @@ main = runTest $ suite "Routing.Bob handles" do
   suite "query serialization" do
     test "with correct values" do
       equal
-        (Just <<< fromFoldable $ [ Tuple "paramBoolean" (Just "off"), Tuple "paramInt" (Just "8"), Tuple "paramString" (Just "tes")])
+        (Just <<< fromFoldable $ [ Tuple "paramBoolean" (singleton "off"), Tuple "paramInt" (singleton "8"), Tuple "paramString" (singleton "tes")])
         (_.query <$> (serialize multipleParams (params "tes" 8 false)))
 
   suite "query with optional values" do
@@ -320,12 +323,7 @@ main = runTest $ suite "Routing.Bob handles" do
 
   suite "query" do
     let
-      q =
-        fromFoldable
-          [ Tuple "paramString" (Just "test")
-          , Tuple "paramInt" (Just "8")
-          , Tuple "paramBoolean" (Just "off")
-          ]
+      q =  Tuple "paramString" (Just "test") :  Tuple "paramInt" (Just "8") : Tuple "paramBoolean" (Just "off") : Nil
       p = Params { paramBoolean: false, paramInt: 8, paramString: "test" }
     suite "serialization" do
       test "through generic helper" do

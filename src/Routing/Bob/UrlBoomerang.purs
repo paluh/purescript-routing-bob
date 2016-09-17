@@ -5,8 +5,10 @@ import Text.Boomerang.String as Text.Boomerang.String
 import Text.Parsing.StringParser as StringParser
 import Control.Error.Util (hush)
 import Data.Either (Either(Left, Right))
-import Data.Maybe (Maybe(Nothing, Just))
-import Data.StrMap (StrMap, empty)
+import Data.Identity (Identity)
+import Data.List (singleton, List(Nil))
+import Data.Maybe (Maybe(Just, Nothing), maybe)
+import Data.StrMap (fromListWith, empty, foldMap, StrMap)
 import Data.Tuple (snd, Tuple(Tuple), fst)
 import Data.URI (Query(Query), RelativePart(RelativePart), RelativeRef(RelativeRef), printRelativeRef, runParseRelativeRef)
 import Data.URI.RelativePart (parseRelativePart, printRelativePart)
@@ -19,10 +21,11 @@ import Text.Parsing.Parser (Parser, PState(PState), ParserT(ParserT), unParserT)
 -- we want to parse/serialize query and path at the same time
 type Url =
   { path :: String
-  , query :: StrMap (Maybe String)
+  , query :: StrMap (List String)
   }
 
 type UrlBoomerang a b = Boomerang Url a b
+type UrlParser a = ParserT Url Identity a
 
 parseURL :: String -> Maybe Url
 parseURL s =
@@ -32,7 +35,9 @@ parseURL s =
         query =
           case maybeQuery of
             Nothing -> empty
-            (Just (Query q)) -> q
+            (Just (Query q)) ->
+              let toValue (Tuple k v) = maybe (Tuple k Nil) (Tuple k <<< singleton) v
+              in fromListWith (<>) <<< map toValue $ q
         path =
           case maybePath of
             Nothing -> ""
@@ -47,7 +52,11 @@ parseURL s =
 printURL :: Url -> Maybe String
 printURL { path, query } = do
   relativePart <- hush $ StringParser.runParser parseRelativePart path
-  pure $ printRelativeRef (RelativeRef relativePart (Just (Query query)) Nothing)
+  pure $ printRelativeRef (RelativeRef relativePart (Just (Query query')) Nothing)
+ where
+  query' = foldMap toQueryValue query
+  toQueryValue name Nil = singleton (Tuple name Nothing)
+  toQueryValue name vs = map (Tuple name <<< Just) vs
 
 liftStringPrs :: forall p a. Parser String a -> Parser { path :: String | p } a
 liftStringPrs prs =

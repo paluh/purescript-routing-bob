@@ -24,11 +24,14 @@
     "purescript-prelude": "1.0.1",
     "purescript-unicode": "1.0.0",
     "purescript-partial": "^1.0.0",
-    "purescript-uri": "^1.0.0"
+    "purescript-uri": "git://github.com/paluh/purescript-uri.git#master"
   },
   "devDependencies": {
     "purescript-debug": "1.0.0",
     "purescript-test-unit": "7.0.0",
     "purescript-unsafe-coerce": "1.0.0"
+  },
+  "resolutions": {
+    "purescript-maps": "^1.1.0"
   }
 }

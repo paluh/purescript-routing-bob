@@ -5,121 +5,35 @@ import Data.Array as Data.Array
 import Control.Error.Util (note, hush)
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
 import Control.Monad.Except (except, ExceptT)
-import Control.Monad.Except.Trans (runExceptT, withExceptT)
+import Control.Monad.Except.Trans (throwError, runExceptT, withExceptT)
 import Control.Monad.State (runState, State)
 import Control.Monad.State.Class (put, get)
 import Control.Monad.Trans (lift)
-import Data.Array (uncons)
-import Data.Foldable (class Foldable, foldr, foldlDefault, foldrDefault, fold)
-import Data.Generic (class Generic, GenericSignature(SigRecord, SigString, SigBoolean, SigInt, SigProd), GenericSpine(SRecord, SString, SInt, SBoolean, SProd), toSpine, fromSpine, toSignature)
+import Data.Either (Either(Left))
+import Data.Foldable (foldr)
+import Data.Generic (class Generic, GenericSpine(SString, SInt, SBoolean, SRecord, SProd), toSpine, fromSpine, toSignature)
 import Data.Identity (Identity)
-import Data.List (List(Cons, Nil), null, fromFoldable, concatMap, (:))
+import Data.List (List(Cons, Nil), null, singleton, head, fromFoldable, (:))
 import Data.Maybe (fromJust, Maybe(Just, Nothing), fromMaybe)
-import Data.Monoid (mempty)
-import Data.NonEmpty (fromNonEmpty, NonEmpty, (:|), foldMap1)
+import Data.NonEmpty (foldMap1, (:|))
 import Data.StrMap (insert, pop, StrMap, empty)
 import Data.String (split)
-import Data.Traversable (class Traversable, traverse, for)
 import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
+import Routing.Bob.Boomerangs (arrayFromList, lazy)
+import Routing.Bob.RecursionSchemes (anaM, para, RAlgArg, Fix(Fix))
+import Routing.Bob.Signature (fromGenericSignature, SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
 import Routing.Bob.UrlBoomerang (Url, printURL, parseURL, int, str, boolean, liftStringBoomerang, liftStringPrs, UrlBoomerang)
 import Text.Boomerang.Combinators (pureBmg, maph, nil, cons, duck1)
 import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
 import Text.Boomerang.Prim (Serializer(Serializer), Boomerang(Boomerang), runSerializer)
 import Text.Boomerang.String (lit)
-import Text.Parsing.Parser (ParseError(ParseError), PState(PState), ParserT(ParserT), runParser)
+import Text.Parsing.Parser (fail, ParseError(ParseError), PState(PState), ParserT(ParserT), runParser)
+import Text.Parsing.Parser.Pos (Position(Position))
 import Text.Parsing.Parser.String (eof)
 import Type.Proxy (Proxy(Proxy))
 
-newtype Fix f = Fix (f (Fix f))
-
--- convertion between types and urls is done through
--- basic recursion schemes - cata and ana
--- don't be afraid it's nothing really fancy - it's just fold and unfold
--- but this strategy simplifies code a lot
-unFix :: forall f. Fix f -> f (Fix f)
-unFix (Fix f) = f
-
-cata :: forall a f. Functor f => (f a -> a) -> Fix f -> a
-cata alg = alg <<< (cata alg <$> _) <<< unFix
-
-type RAlgArg f a =  f { f :: Fix f, a :: a }
-type RAlg f a = RAlgArg f a -> a
-para :: forall a f. Functor f => RAlg f a -> Fix f -> a
-para rAlg =
-  rAlg <<< (g <$> _) <<< unFix
- where
-  g f = let a = (para rAlg f) in { f, a }
-
-ana :: forall a f. Functor f => (a -> f a) -> a -> Fix f
-ana coalg = Fix <<< (ana coalg <$> _) <<< coalg
-
-anaM :: forall a f m. (Functor f, Monad m, Traversable f) => (a -> m (f a)) -> a -> m (Fix f)
-anaM coalgM = ((map Fix) <<< traverse (anaM coalgM)) <=< coalgM
-
--- subset of GenericSignature which is covered by this library
-type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
-
-data SigF r
-  = SigProdF String (NonEmpty List (DataConstructorF r))
-  | SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: r }))
-  | SigBooleanF
-  | SigIntF
-  | SigStringF
-
-instance functorSigF :: Functor SigF where
-  map f (SigProdF s l) = SigProdF s (map (\r -> r { sigValues = map f r.sigValues }) l)
-  map f (SigRecordF l) = SigRecordF (map (\r -> r { recValue = f r.recValue }) l)
-  map _ SigBooleanF = SigBooleanF
-  map _ SigIntF = SigIntF
-  map _ SigStringF = SigStringF
-
-instance foldableSigF :: Foldable SigF where
-  foldMap f (SigProdF s l) =
-    fold <<< concatMap (\r -> map f r.sigValues) <<< (fromNonEmpty (:)) $ l
-  foldMap f (SigRecordF l) =
-    fold <<< map (\r -> f r.recValue) <<< (fromNonEmpty (:)) $ l
-  foldMap _ _ = mempty
-  foldr f = foldrDefault f
-  foldl f = foldlDefault f
-
-instance traversableSigF :: Traversable SigF where
-  traverse f (SigProdF s l) =
-    SigProdF s <$> for l (\r -> r { sigValues = _ } <$> for r.sigValues f)
-  traverse f (SigRecordF l) =
-    SigRecordF <$> for l (\r -> r { recValue = _ } <$> f r.recValue)
-  traverse _ SigBooleanF = pure SigBooleanF
-  traverse _ SigIntF = pure SigIntF
-  traverse _ SigStringF = pure SigStringF
-  sequence = traverse id
-
-fromGenericSignature :: GenericSignature -> Maybe (SigF GenericSignature)
-fromGenericSignature (SigProd s a) = do
-  {head: h, tail: t} <- uncons <<< map fromConstructor $ a
-  pure $ SigProdF s (h :| fromFoldable t)
- where
-  fromConstructor c = c { sigValues = fromFoldable $ map (_ $ unit) c.sigValues }
-fromGenericSignature (SigRecord a) = do
-  {head: h, tail: t} <- uncons <<< map fromField $ a
-  pure $ SigRecordF (h :| fromFoldable t)
- where
-  fromField f = f { recValue = f.recValue unit }
-fromGenericSignature SigInt = Just SigIntF
-fromGenericSignature SigBoolean = Just SigBooleanF
-fromGenericSignature SigString = Just SigStringF
-fromGenericSignature _ = Nothing
-
 type UrlBoomerangForGenericSpine r = UrlBoomerang r (GenericSpine :- r)
-
-lazy :: forall z y. UrlBoomerang (y :- z) ((Unit -> y) :- z)
-lazy = maph const (Just <<< (_ $ unit))
-
-arrayFromList :: forall t a tok. Boomerang tok (List a :- t) (Array a :- t)
-arrayFromList =
-  maph arrayFromFoldable (Just <<< fromFoldable)
- where
-  -- very ineficient - will be replaced with next purescript-array release
-  arrayFromFoldable = foldr Data.Array.cons []
 
 maybeIsoToSpineBoomerang ::
   forall r.
@@ -135,7 +49,166 @@ maybeIsoToSpineBoomerang just nothing value =
   nothingSer (SProd c _ :- r) | c == nothing = Just r
   nothingSer _ = Nothing
 
+-- maybeIsoBmg :: valueBmg -
+-- 
+-- 
+-- -- parse' :: forall a r. _ -> String -> Fix SigF -> ExceptT String (State (StrMap (List String))) (r -> a :- r)
+-- parse' prs name (Fix f) = do
+--   query <- lift get
+--   value <-
+--     -- XXX: any type isomorphic to maybe should be handled here
+--     case parseMaybeIso f of
+--       Just c ->
+--         case pop name query of
+--           -- XXX: don't use arbitrary empty value encoding: ""
+--           --      serialize Nothing to get this value
+--           Nothing -> pure "" -- (serializeNothing c.nothing c.sigF)
+--           Just (Tuple Nil query') -> do
+--             lift (put query')
+--             pure "" -- (serializeNothing c.nothing c.sigF)
+--           Just (Tuple (v : Nil) query') -> do
+--             lift (put query')
+--             pure v
+--           Just (Tuple vs@(v : v' : _) query') ->
+--             throwError (parseError ("Multiple values for param: " <> name <> " (" <> show vs <> ")"))
+--       Nothing -> do
+--         Tuple valuesList query' <- note' ("Mising param: " <> name <> ".") (pop name query)
+--         lift (put query')
+--         note' ("Param required: " <> name <> ".") (head valuesList)
+--         -- XXXX: Add similar case as above for multiple params
+--         --  Just (Tuple vs@(v : v' : _) query') ->
+--         --    throwError ("Multiple values for param: " <> name <> " (" <> show vs <> ")")
+--   url <- note' ("Incorrect uri encoded in param: " <> name <> ".") (parseURL value)
+--   withExceptT
+--     (\(ParseError pe) ->
+--         (parseError ("Fail to parse param \"" <> name <> "\": " <> pe.message <> ".")))
+--     (except $ (runParser url prs))
+--  where
+--   note':: forall m s. (Monad m) => String -> (Maybe s) -> ExceptT String m s
+--   note' m v =
+--     except $ note m v
+--   parseError message = message
+
+-- maybeValuePrs :: Fix SigF -> UrlBoomerang r (a :- r) -> UrlBoomerang r (a :- r)
+-- maybeValuePrs :: forall a. _ -> ParserT String Identity a -> ParserT (Maybe (List String)) Identity a
+-- maybeValuePrs (Fix f) valuePrs =
+--   case matchMaybeProdF f of
+--     Just m -> prs m
+--     Nothing -> fail "Production doesn't match a maybe structure"
+--  where
+--   matchMaybeProdF sigF@(SigProdF _ (j@{ sigValues: (v : Nil) } :| (n@{ sigValues: Nil } : Nil))) =
+--     Just { sigF: sigF, just: j.sigConstructor, nothing: n.sigConstructor, value: v}
+--   matchMaybeProdF sigF@(SigProdF _ (n@{ sigValues: Nil } :| (j@{ sigValues: (v : Nil) } : Nil))) =
+--     Just { sigF: sigF, just: j.sigConstructor, nothing: n.sigConstructor, value: v}
+--   matchMaybeProdF _ = Nothing
+-- 
+--   serializeNothing constructorName sigF =
+--     let sb = para toSpineBoomerang (Fix sigF)
+--     in unsafePartial $ fromJust $ (serialize sb (SProd constructorName [])) >>= printURL
+-- 
+--   prs :: _ -> ParserT (Maybe (List String)) Identity a
+--   prs maybeMatch =
+--     ParserT prs
+--    where
+--     prs (PState s) =
+--       let
+--         result = do
+--           rawValue <- case s.input of
+--             Nothing ->
+--               pure $ serializeNothing maybeMatch.nothing maybeMatch.sigF
+--             Just Nil ->
+--               pure $ serializeNothing maybeMatch.nothing maybeMatch.sigF
+--             Just (v : Nil) ->
+--               pure v
+--             Just _ ->
+--               throwError
+--                 { message: "Maybe iso parser can handle only single value"
+--                 , position: s.position
+--                 }
+--           url <- note' ("Incorrect uri encoded in param: " <> name <> ".") (parseURL value)
+--           runParser url rawValue
+--       in
+--         { input: (Nothing :: Maybe (List String))
+--         , result
+--         , consumed: true
+--         , position: s.position
+--         }
+
+type MaybeMatch =
+  { nothing :: String
+  , just :: String
+  , sigF :: Fix SigF
+  , value :: Fix SigF
+  }
+
+matchMaybe :: Fix SigF -> Maybe MaybeMatch
+matchMaybe sigF@(Fix (SigProdF _ (j@{ sigValues: (v : Nil) } :| (n@{ sigValues: Nil } : Nil)))) =
+  Just { sigF: sigF, just: j.sigConstructor, nothing: n.sigConstructor, value: v}
+matchMaybe sigF@(Fix (SigProdF _ (n@{ sigValues: Nil } :| (j@{ sigValues: (v : Nil) } : Nil)))) =
+  Just { sigF: sigF, just: j.sigConstructor, nothing: n.sigConstructor, value: v}
+matchMaybe _ = Nothing
+
+serializeNothing :: MaybeMatch -> String
+serializeNothing m =
+  let sb = para toSpineBoomerang (m.sigF)
+  in unsafePartial $ fromJust $ (serialize sb (SProd m.nothing [])) >>= printURL
+
+type UrlParser a = ParserT Url Identity a
+
+maybeValuePrs :: forall a. Fix SigF -> UrlParser a -> ParserT (List String) Identity a
+maybeValuePrs sigF valuePrs =
+  case matchMaybe sigF of
+    Just m -> prs m
+    Nothing -> (fail "Production doesn't match a maybe structure")
+ where
+  prs :: MaybeMatch -> ParserT (List String) Identity a
+  prs maybeMatch =
+    ParserT prs'
+   where
+    prs' :: PState (List String) -> Identity { input :: (List String), result :: Either ParseError a, consumed:: Boolean, position:: Position }
+    prs' (PState s) =
+      case parseMaybeValue s.input valuePrs maybeMatch of
+        parseError@(Left _) ->
+          pure
+            { input: s.input
+            , result: parseError
+            , consumed: false
+            , position: s.position
+            }
+        result ->
+          pure
+            { input: Nil
+            , result: result
+            , consumed: true
+            , position: Position { column: 1, line: 2}
+            }
+
+    parseMaybeValue :: List String -> UrlParser a -> MaybeMatch -> Either ParseError a
+    parseMaybeValue input valuePrs maybeMatch = do
+      value <- case input of
+        Nil ->
+          pure $ serializeNothing maybeMatch
+        (v : Nil) ->
+          pure v
+        _ ->
+          throwError (parseError "Maybe iso parser can handle only single value" 2)
+      url <- note (parseError ("Incorrect uri encoded in query param value: \"" <> value <> "\"") 1) (parseURL value)
+      runParser url valuePrs
+     where
+      parseError message column =
+        ParseError { message: message, position: Position {column: column, line: 1}}
+
+
+-- parse' :: forall a r. _ -> String -> Fix SigF -> ExceptT String (State (StrMap (List String))) (r -> a :- r)
+-- parse' prs name (Fix f) = do
+
+
+-- XXX: split this monster
 -- make query parameter boomerang
+-- @name - variable query name (name1=value1&name2=value2)
+-- @{a, f} - a is boomerang for given value and f is current
+--           node in SigF expression tree because we
+--           are using (check paramorphism)
 param :: forall a r. String -> { a :: UrlBoomerang r (a :- r), f :: Fix SigF } -> UrlBoomerang r (a :- r)
 param name { a: (Boomerang valueBmg), f: Fix f } =
   Boomerang
@@ -157,6 +230,7 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
   prs =
     ParserT prs'
    where
+    prs' :: PState Url -> Identity { input :: Url, result :: Either ParseError (r -> a :- r), consumed :: Boolean, position :: Position }
     prs' (PState s) =
       toParserTResult <<< flip runState s.input.query <<< runExceptT $ parse'
      where
@@ -168,7 +242,7 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
           , position: s.position
           }
 
-      parse' :: ExceptT ParseError (State (StrMap (Maybe String))) (r -> a :- r)
+      parse' :: ExceptT ParseError (State (StrMap (List String))) (r -> a :- r)
       parse' = do
         query <- lift get
         value <-
@@ -178,17 +252,22 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
               case pop name query of
                 -- XXX: don't use arbitrary empty value encoding: ""
                 --      serialize Nothing to get this value
-                Nothing -> pure (serializeNothing c.nothing c.sigF)
-                Just (Tuple Nothing query') -> do
+                Nothing -> pure "" -- (serializeNothing c.nothing c.sigF)
+                Just (Tuple Nil query') -> do
                   lift (put query')
-                  pure (serializeNothing c.nothing c.sigF)
-                Just (Tuple (Just v) query') -> do
+                  pure "" -- (serializeNothing c.nothing c.sigF)
+                Just (Tuple (v : Nil) query') -> do
                   lift (put query')
                   pure v
+                Just (Tuple vs@(v : v' : _) query') ->
+                  throwError (parseError ("Multiple values for param: " <> name <> " (" <> show vs <> ")"))
             Nothing -> do
-              Tuple maybeValue query' <- note' ("Mising param: " <> name <> ".") (pop name query)
+              Tuple valuesList query' <- note' ("Mising param: " <> name <> ".") (pop name query)
               lift (put query')
-              note' ("Param required: " <> name <> ".") maybeValue
+              note' ("Param required: " <> name <> ".") (head valuesList)
+              -- XXXX: Add similar case as above for multiple params
+              --  Just (Tuple vs@(v : v' : _) query') ->
+              --    throwError ("Multiple values for param: " <> name <> " (" <> show vs <> ")")
         url <- note' ("Incorrect uri encoded in param: " <> name <> ".") (parseURL value)
         withExceptT
           (\(ParseError pe) ->
@@ -203,25 +282,26 @@ param name { a: (Boomerang valueBmg), f: Fix f } =
 
   ser :: Serializer Url (a :- r) r
   ser =
-    Serializer $ \v -> case runSerializer valueBmg.ser v of
-      Just (Tuple sf rest) ->
-        let
-          url = sf { path: "", query: empty }
-          v' =
-            unsafePartial $
-              case printURL url of
-                Just s -> s
-          r' = pure (Tuple (\r -> r { query = insert name (Just v') r.query}) rest)
-        in
-          case parseMaybeIso f of
-            Just c ->
-              if v' == serializeNothing c.nothing c.sigF
-                then
-                  pure (Tuple id rest)
-                else
-                  r'
-            Nothing -> r'
-      Nothing -> Nothing
+    Serializer $ \v ->
+      case runSerializer valueBmg.ser v of
+        Just (Tuple sf rest) ->
+          let
+            url = sf { path: "", query: empty }
+            v' =
+              unsafePartial $
+                case printURL url of
+                  Just s -> s
+            r' = pure (Tuple (\r -> r { query = insert name (singleton v') r.query}) rest)
+          in
+            case parseMaybeIso f of
+              Just c ->
+                if v' == serializeNothing c.nothing c.sigF
+                  then
+                    pure (Tuple id rest)
+                  else
+                    r'
+              Nothing -> r'
+        Nothing -> Nothing
 
 
 toSpineBoomerang ::
@@ -276,11 +356,6 @@ toSpineBoomerang (SigRecordF l) =
    where
     fieldBmg =
       maph { recLabel: e.recLabel, recValue: _} (Just <<< _.recValue) <<< lazy <<< param e.recLabel e.recValue
-    -- param' l { f, a } =
-    --     (SProd "Data.Maybe" v) ->
-
-    --     otherwise -> param l v
-
   ser (SRecord a) = Just a
   ser _ = Nothing
 toSpineBoomerang SigBooleanF =
