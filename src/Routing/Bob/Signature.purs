@@ -3,7 +3,7 @@ module Routing.Bob.Signature where
 import Prelude
 import Data.Array (uncons)
 import Data.Foldable (foldMap, class Foldable, foldlDefault, foldrDefault, fold)
-import Data.Generic (GenericSignature(SigString, SigBoolean, SigInt, SigRecord, SigProd))
+import Data.Generic (GenericSignature(SigArray, SigString, SigBoolean, SigInt, SigRecord, SigProd))
 import Data.List (List, fromFoldable, concatMap, (:))
 import Data.Maybe (Maybe(Nothing, Just))
 import Data.Monoid (mempty)
@@ -26,14 +26,15 @@ type JustConstructorName = String
 type NothingConstrtuctorName = String
 
 data SigRecValueF r
-  = SigRecValueF r
+  = SigRecRequiredValueF r
   | SigRecOptionalValueF JustConstructorName NothingConstrtuctorName r
---   | SigRecArrayValueF r
---   | SigRecListValueF r
+  | SigRecArrayOfValuesF r
+--  | SigRecListValueF ConsConstructorName NilConstructorName r
 
 instance functorSigRecValueF :: Functor SigRecValueF where
-  map f (SigRecValueF r) = SigRecValueF (f r)
+  map f (SigRecRequiredValueF r) = SigRecRequiredValueF (f r)
   map f (SigRecOptionalValueF j n r) = SigRecOptionalValueF j n (f r)
+  map f (SigRecArrayOfValuesF r) = SigRecArrayOfValuesF (f r)
 
 instance functorSigF :: Functor SigF where
   map f (SigProdF s l) = SigProdF s (map (\r -> r { sigValues = map f r.sigValues }) l)
@@ -43,8 +44,9 @@ instance functorSigF :: Functor SigF where
   map _ SigStringF = SigStringF
 
 instance foldableSigRecValueF :: Foldable SigRecValueF where
-  foldMap f (SigRecValueF r) = f r
+  foldMap f (SigRecRequiredValueF r) = f r
   foldMap f (SigRecOptionalValueF _ _ r) = f r
+  foldMap f (SigRecArrayOfValuesF r) = f r
   foldr f = foldrDefault f
   foldl f = foldlDefault f
 
@@ -58,8 +60,9 @@ instance foldableSigF :: Foldable SigF where
   foldl f = foldlDefault f
 
 instance traversableSigRecValueF :: Traversable SigRecValueF where
-  traverse f (SigRecValueF r) = SigRecValueF <$> (f r)
+  traverse f (SigRecRequiredValueF r) = SigRecRequiredValueF <$> (f r)
   traverse f (SigRecOptionalValueF j n r) = (SigRecOptionalValueF j n) <$> (f r)
+  traverse f (SigRecArrayOfValuesF r) = SigRecArrayOfValuesF <$> (f r)
   sequence = traverse id
 
 instance traversableSigF :: Traversable SigF where
@@ -96,11 +99,13 @@ fromGenericSignature (SigRecord a) = do
   pure $ SigRecordF (h :| fromFoldable t)
  where
   fromField f = f { recValue = recValue <<< f.recValue $ unit }
+  recValue (SigArray v) =
+    SigRecArrayOfValuesF (v unit)
   recValue r =
     case matchOptional r of
       Just optionalMatch ->
         SigRecOptionalValueF optionalMatch.just optionalMatch.nothing optionalMatch.value
-      Nothing -> SigRecValueF r
+      Nothing -> SigRecRequiredValueF r
 fromGenericSignature SigInt = Just SigIntF
 fromGenericSignature SigBoolean = Just SigBooleanF
 fromGenericSignature SigString = Just SigStringF

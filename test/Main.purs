@@ -9,7 +9,7 @@ import Control.Monad.Eff.Console (CONSOLE)
 import Data.Generic (gShow, class Generic, gEq)
 import Data.List (List(Nil), (:))
 import Data.Maybe (Maybe(..))
-import Data.StrMap (StrMap, fromFoldable, empty)
+import Data.StrMap (StrMap, empty)
 import Data.String (dropWhile)
 import Data.Tuple (Tuple(Tuple))
 import Data.URI (Query(Query))
@@ -141,6 +141,17 @@ derive instance eqParamsWithOptionals :: Eq ParamsWithOptionals
 instance showParamsWithOptionals :: Show ParamsWithOptionals where
   show = gShow
 
+newtype RecordWithArrays =
+  RecordWithArrays
+    { arrayOfStrings :: Array String
+    , arrayOfInts :: Array Int
+    , arrayOfBooleans :: Array Boolean
+    }
+derive instance genericRecordWithArrays :: Generic RecordWithArrays
+derive instance eqRecordWithArrays :: Eq RecordWithArrays
+instance showRecordWithArrays :: Show RecordWithArrays where
+  show = gShow
+
 any :: forall r. UrlBoomerang r (HCons String r)
 any = liftStringBoomerang $ manyNoneOf ""
 
@@ -247,11 +258,6 @@ main = runTest $ suite "Routing.Bob handles" do
         equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
   suite "query with optional values" do
     let
-      q =
-        fromFoldable
-          [ Tuple "optParamString" Nothing
-          , Tuple "optParamBoolean" (Just "off")
-          ]
       p = ParamsWithMaybes { optParamBoolean: Just false, optParamInt: Nothing, optParamString: Nothing }
     suite "parsing" do
       test "through generic helper from String" do
@@ -287,10 +293,22 @@ main = runTest $ suite "Routing.Bob handles" do
         router' (Proxy :: Proxy ParamsWithOptionals) (\r -> do
           equal "?optParamString=test" (toUrl r fObj)
           equal (Just sObj) (fromUrl r "?optParamInt=8&optParamBoolean"))
-
     suite "parsing" do
       test "through generic helper from String" do
         equal
           (Just p)
           (genericFromUrl "?paramString=test&paramInt=8&paramBoolean=off")
 
+  suite "query with arrays" do
+    let
+      p = RecordWithArrays { arrayOfStrings: ["string1", "string2"], arrayOfInts: [1], arrayOfBooleans: [] }
+    suite "parsing" do
+      test "through generic helper from String" do
+        equal
+          (Just p)
+          (genericFromUrl "?arrayOfInts=1&arrayOfStrings=string1&arrayOfStrings=string2")
+    suite "serialization" do
+      test "through generic helper to String" do
+        equal
+          (Just "?arrayOfStrings=string1&arrayOfStrings=string2&arrayOfInts=1")
+          (genericToUrl p)

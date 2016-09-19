@@ -2,35 +2,27 @@ module Routing.Bob where
 
 import Prelude
 import Data.Array as Data.Array
-import Control.Error.Util (note, hush)
+import Control.Error.Util (hush)
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
-import Control.Monad.Except (except, ExceptT)
-import Control.Monad.Except.Trans (throwError, runExceptT, withExceptT)
-import Control.Monad.State (runState, State)
-import Control.Monad.State.Class (put, get)
-import Control.Monad.Trans (lift)
-import Data.Either (Either(Right, Left))
 import Data.Foldable (foldr)
 import Data.Generic (toSpine, class Generic, GenericSpine(SString, SInt, SBoolean, SRecord, SProd), fromSpine, toSignature)
-import Data.Identity (Identity)
-import Data.List (List(Cons, Nil), null, singleton, head, fromFoldable, (:))
-import Data.Maybe (fromJust, Maybe(Just, Nothing), fromMaybe)
+import Data.List (List(Cons, Nil), null)
+import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
 import Data.NonEmpty (foldMap1, (:|))
-import Data.StrMap (insert, pop, StrMap, empty)
+import Data.StrMap (empty)
 import Data.String (split)
 import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
 import Routing.Bob.Boomerangs (arrayFromList, lazy)
-import Routing.Bob.Query.Boomerangs (ValueBoomerang, toOptionalValueBoomerang, toSimpleValueBoomerang, toQueryBoomerang)
-import Routing.Bob.RecursionSchemes (anaM, para, RAlgArg, Fix(Fix))
-import Routing.Bob.Signature (SigRecValueF(SigRecOptionalValueF, SigRecValueF), fromGenericSignature, SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
-import Routing.Bob.UrlBoomerang (UrlSerializer, Url, printURL, parseURL, int, str, boolean, liftStringBoomerang, liftStringPrs, UrlBoomerang)
-import Text.Boomerang.Combinators (pureBmg, maph, nil, cons, duck1)
+import Routing.Bob.Query.Boomerangs (toArrayOfValuesBoomerag, toQueryBoomerang, toSimpleValueBoomerang, toOptionalValueBoomerang)
+import Routing.Bob.RecursionSchemes (anaM, para, RAlgArg, Fix)
+import Routing.Bob.Signature (SigRecValueF(SigRecArrayOfValuesF, SigRecOptionalValueF, SigRecRequiredValueF), fromGenericSignature, SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
+import Routing.Bob.UrlBoomerang (UrlBoomerang, Url, parseURL, printURL, liftStringPrs, str, int, boolean, liftStringBoomerang)
+import Text.Boomerang.Combinators (maph, nil, duck1, cons)
 import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
-import Text.Boomerang.Prim (Serializer(Serializer), Boomerang(Boomerang), runSerializer)
+import Text.Boomerang.Prim (Boomerang(Boomerang), runSerializer)
 import Text.Boomerang.String (lit)
-import Text.Parsing.Parser (parseFailed, fail, ParseError(ParseError), PState(PState), ParserT(ParserT), runParser)
-import Text.Parsing.Parser.Pos (Position(Position))
+import Text.Parsing.Parser (runParser)
 import Text.Parsing.Parser.String (eof)
 import Type.Proxy (Proxy(Proxy))
 
@@ -63,9 +55,10 @@ toSpineBoomerang (SigRecordF l) =
     forall r'. String -> SigRecValueF { a :: UrlBoomerangForGenericSpine r', f :: Fix SigF } -> UrlBoomerangForGenericSpine r'
   fromRecValue key (SigRecOptionalValueF just nothing v@{ a: valueBmg }) =
     toQueryBoomerang key <<< toOptionalValueBoomerang just nothing $ valueBmg
-  fromRecValue key (SigRecValueF v@{ a: valueBmg }) =
+  fromRecValue key (SigRecRequiredValueF v@{ a: valueBmg }) =
     toQueryBoomerang key <<< toSimpleValueBoomerang $ valueBmg
-
+  fromRecValue key (SigRecArrayOfValuesF v@{ a: valueBmg }) =
+    toQueryBoomerang key <<< toArrayOfValuesBoomerag $ valueBmg
 toSpineBoomerang (SigProdF _ cs@(h :| t)) =
   foldMap1 fromConstructor cs
  where

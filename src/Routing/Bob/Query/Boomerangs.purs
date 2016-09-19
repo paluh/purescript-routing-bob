@@ -1,26 +1,24 @@
 module Routing.Bob.Query.Boomerangs where
 
 import Prelude
+import Data.List as Data.List
 import Control.Error.Util (note)
 import Control.Monad.Error.Class (throwError)
-import Data.Either (Either(Right, Left))
-import Data.Generic (toSpine, class Generic, fromSpine, GenericSpine(SProd))
-import Data.Identity (Identity(Identity))
-import Data.List (length, concat, singleton, List(Nil), (:))
-import Data.Maybe (fromJust, Maybe(Nothing, Just))
-import Data.Monoid (mempty, class Monoid)
+import Data.Array (fromFoldable)
+import Data.Either (Either(Left))
+import Data.Generic (GenericSpine(SArray, SProd))
+import Data.Identity (Identity)
+import Data.List (List(Nil), length, reverse, (:))
+import Data.Maybe (Maybe(Nothing, Just))
 import Data.NonEmpty ((:|))
-import Data.StrMap (insert, pop, empty)
+import Data.StrMap (empty, insert, pop)
+import Data.Traversable (for)
 import Data.Tuple (Tuple(Tuple))
-import Partial.Unsafe (unsafePartial)
-import Routing.Bob.Boomerangs (serialize, lazy)
-import Routing.Bob.RecursionSchemes (para, Fix(Fix))
-import Routing.Bob.Signature (JustConstructorName, NothingConstrtuctorName, SigF(SigProdF))
+import Routing.Bob.Signature (NothingConstrtuctorName, JustConstructorName)
 import Routing.Bob.UrlBoomerang (UrlSerializer, Url, UrlBoomerang, UrlParser, parseURL, printURL)
-import Text.Boomerang.Combinators (pureBmg, maph)
-import Text.Boomerang.HStack (HNil(HNil), type (:-), (:-))
+import Text.Boomerang.HStack (type (:-), hHead, (:-))
 import Text.Boomerang.Prim (Serializer(Serializer), runSerializer, Boomerang(Boomerang))
-import Text.Parsing.Parser (parseFailed, fail, runParser, ParseError(ParseError), PState(PState), ParserT(ParserT), Parser)
+import Text.Parsing.Parser (PState(PState), ParseError(ParseError), ParserT(ParserT), parseFailed, runParser)
 import Text.Parsing.Parser.Pos (Position(Position))
 
 type Key = String
@@ -187,4 +185,51 @@ toOptionalValueBoomerang just nothing (Boomerang valueBmg) =
   Boomerang
     { prs: toOptionalValueParser just nothing valueBmg.prs
     , ser: toOptionalValueSerializer just nothing valueBmg.ser
+    }
+
+toArrayOfValuesParser ::
+  forall r.
+    UrlParser r (GenericSpine :- r) ->
+    ValueParser r (GenericSpine :- r)
+toArrayOfValuesParser valuePrs =
+  ParserT (pure <$> prs)
+ where
+  prs (PState s) =
+    let
+      result = case s.input of
+        vs -> do
+          urls <- note (parseError ("Some of values are incorrectly encoded: \"" <> show vs <> "\"") 1) (for vs parseURL)
+          fs <- for urls (flip runParser valuePrs)
+          pure $ (\r -> (SArray <<< fromFoldable <<< reverse <<< map (const <<< hHead <<< (_ $ r)) $ fs) :- r)
+    in case result of
+      Left (ParseError p) -> parseFailed s.input s.position p.message
+      _ -> { input: Nil, result, consumed: true, position: position (length s.input) }
+   where
+    parseError message column =
+      ParseError { message: message, position: Position {column: column, line: 1}}
+    position column = Position { column, line: 1}
+
+toArrayOfValuesSerializer ::
+  forall r.
+    UrlSerializer (GenericSpine :- r) r ->
+    ValueSerializer (GenericSpine :- r) r
+toArrayOfValuesSerializer valueSer =
+  Serializer ser
+ where
+  ser (b :- r) =
+    case b of
+      SArray vs -> do
+        ts <- for vs (runSerializer valueSer <<< (_ :- r) <<< (_ $ unit))
+        vs' <- for ts (printURL <<< (\(Tuple ser' _) -> ser' ({ path: "", query: empty } :: Url) ))
+        pure (Tuple (Data.List.fromFoldable vs' <> _) r)
+      _ -> Nothing
+
+toArrayOfValuesBoomerag ::
+  forall r.
+    UrlBoomerang r (GenericSpine :- r) ->
+    ValueBoomerang r (GenericSpine :- r)
+toArrayOfValuesBoomerag (Boomerang valueBmg) =
+  Boomerang
+    { prs: toArrayOfValuesParser valueBmg.prs
+    , ser: toArrayOfValuesSerializer valueBmg.ser
     }
