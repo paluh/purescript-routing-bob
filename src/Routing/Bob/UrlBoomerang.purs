@@ -25,7 +25,8 @@ type Url =
   }
 
 type UrlBoomerang a b = Boomerang Url a b
-type UrlParser a = ParserT Url Identity a
+type UrlParser a b = ParserT Url Identity (a -> b)
+type UrlSerializer a b = Serializer Url a b
 
 parseURL :: String -> Maybe Url
 parseURL s =

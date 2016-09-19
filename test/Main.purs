@@ -7,23 +7,20 @@ import Control.Monad.Aff.AVar (AVAR)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Data.Generic (gShow, class Generic, gEq)
-import Data.List (List(Nil), singleton, (:))
+import Data.List (List(Nil), (:))
 import Data.Maybe (Maybe(..))
 import Data.StrMap (StrMap, fromFoldable, empty)
 import Data.String (dropWhile)
 import Data.Tuple (Tuple(Tuple))
 import Data.URI (Query(Query))
 import Data.URI.Query (parseQuery)
-import Routing.Bob (serialize, parse, Router, genericFromUrl, toUrl, genericToUrl, param, fromUrl, router)
-import Routing.Bob.RecursionSchemes (Fix(Fix))
-import Routing.Bob.Signature (SigF(SigIntF, SigBooleanF, SigStringF))
-import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang, boolean, int)
+import Routing.Bob (Router, genericFromUrl, fromUrl, toUrl, genericToUrl, router)
+import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang)
 import Test.Unit (suite, failure, test, TIMER)
 import Test.Unit.Assert (equal)
 import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Main (runTest)
-import Text.Boomerang.Combinators (pureBmg)
-import Text.Boomerang.HStack (HCons(HCons), hCons, hArg)
+import Text.Boomerang.HStack (HCons)
 import Text.Boomerang.String (manyNoneOf)
 import Text.Parsing.StringParser (runParser)
 import Type.Proxy (Proxy(..))
@@ -248,7 +245,6 @@ main = runTest $ suite "Routing.Bob handles" do
       router' (Proxy :: Proxy StringValue) (\r -> do
         equal "this%2Fis%3Ftest%23string" (toUrl r obj)
         equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
-  -- multipleParams :: forall r. UrlBoomerang r (HCons Params r)
   suite "Data.Maybe in different way" do
     test "and Just constrcutor is not used" do
       equal
@@ -265,43 +261,6 @@ main = runTest $ suite "Routing.Bob handles" do
       equal
         (Just nothing)
         (genericFromUrl "")
-  let
-    pBmg =
-      pureBmg
-        (hArg (hArg (hArg hCons)) params)
-        (\(HCons (Params r) t) -> Just (hCons r.paramString (hCons r.paramInt (hCons r.paramBoolean t))))
-    multipleParams =
-      pBmg <<< param "paramString" { a: any, f: Fix SigStringF } <<< param "paramInt" { a: int, f: Fix SigIntF } <<< param "paramBoolean" { a: boolean, f: Fix SigBooleanF }
-
-  suite "query parsing" do
-    test "with single param" do
-      let
-        q = fromFoldable [Tuple "param" (singleton "somevalue")]
-        urlBmg = param "param" { a: (liftStringBoomerang $ manyNoneOf ""), f: Fix SigStringF }
-        url = query q
-      equal
-        (Just "somevalue")
-        (parse urlBmg url)
-
-    test "with multiple parameters" do
-      let
-        q =
-          fromFoldable
-            [ Tuple "paramInt" (singleton "8")
-            , Tuple "paramBoolean" (singleton "off")
-            , Tuple "paramString" (singleton "somestringvalue")
-            ]
-        url = query q
-      equal
-        (Just $ params "somestringvalue" 8 false)
-        (parse multipleParams url)
-
-  suite "query serialization" do
-    test "with correct values" do
-      equal
-        (Just <<< fromFoldable $ [ Tuple "paramBoolean" (singleton "off"), Tuple "paramInt" (singleton "8"), Tuple "paramString" (singleton "tes")])
-        (_.query <$> (serialize multipleParams (params "tes" 8 false)))
-
   suite "query with optional values" do
     let
       q =
@@ -314,7 +273,7 @@ main = runTest $ suite "Routing.Bob handles" do
       test "through generic helper from String" do
         equal
           (Just p)
-          (genericFromUrl "?optParamString=&optParamBoolean=off")
+          (genericFromUrl "?optParamString&optParamBoolean=off")
     suite "serialization" do
       test "through generic helper from String" do
         equal
@@ -343,10 +302,11 @@ main = runTest $ suite "Routing.Bob handles" do
 
         router' (Proxy :: Proxy ParamsWithOptionals) (\r -> do
           equal "?optParamString=test" (toUrl r fObj)
-          equal (Just sObj) (fromUrl r "?optParamInt=8&optParamBoolean="))
+          equal (Just sObj) (fromUrl r "?optParamInt=8&optParamBoolean"))
 
     suite "parsing" do
       test "through generic helper from String" do
         equal
           (Just p)
           (genericFromUrl "?paramString=test&paramInt=8&paramBoolean=off")
+
