@@ -245,22 +245,6 @@ main = runTest $ suite "Routing.Bob handles" do
       router' (Proxy :: Proxy StringValue) (\r -> do
         equal "this%2Fis%3Ftest%23string" (toUrl r obj)
         equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
-  suite "Data.Maybe in different way" do
-    test "and Just constrcutor is not used" do
-      equal
-        (Just "8")
-        (genericToUrl (Just 8))
-      equal
-        (Just (Just 8))
-        (genericFromUrl "8")
-    test "and Nothing is just absent" do
-      let nothing = Nothing :: Maybe Int
-      equal
-        (Just "")
-        (genericToUrl nothing)
-      equal
-        (Just nothing)
-        (genericFromUrl "")
   suite "query with optional values" do
     let
       q =
