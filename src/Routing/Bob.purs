@@ -14,9 +14,12 @@ import Data.String (split)
 import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
 import Routing.Bob.Boomerangs (arrayFromList, lazy)
-import Routing.Bob.Query.Boomerangs (toArrayOfValuesBoomerag, toQueryBoomerang, toSimpleValueBoomerang, toOptionalValueBoomerang)
+import Routing.Bob.Query.Array (toArrayBoomerag)
+import Routing.Bob.Query.Prim (toQueryBoomerang)
+import Routing.Bob.Query.RequiredValue (toRequiredValueBoomerang)
+import Routing.Bob.Query.OptionalValue (toOptionalValueBoomerang)
 import Routing.Bob.RecursionSchemes (anaM, para, RAlgArg, Fix)
-import Routing.Bob.Signature (SigRecValueF(SigRecArrayOfValuesF, SigRecOptionalValueF, SigRecRequiredValueF), fromGenericSignature, SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
+import Routing.Bob.Signature (SigRecValueF(SigRecArrayF, SigRecOptionalValueF, SigRecRequiredValueF), fromGenericSignature, SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
 import Routing.Bob.UrlBoomerang (UrlBoomerang, Url, parseURL, printURL, liftStringPrs, str, int, boolean, liftStringBoomerang)
 import Text.Boomerang.Combinators (maph, nil, duck1, cons)
 import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
@@ -56,9 +59,9 @@ toSpineBoomerang (SigRecordF l) =
   fromRecValue key (SigRecOptionalValueF just nothing v@{ a: valueBmg }) =
     toQueryBoomerang key <<< toOptionalValueBoomerang just nothing $ valueBmg
   fromRecValue key (SigRecRequiredValueF v@{ a: valueBmg }) =
-    toQueryBoomerang key <<< toSimpleValueBoomerang $ valueBmg
-  fromRecValue key (SigRecArrayOfValuesF v@{ a: valueBmg }) =
-    toQueryBoomerang key <<< toArrayOfValuesBoomerag $ valueBmg
+    toQueryBoomerang key <<< toRequiredValueBoomerang $ valueBmg
+  fromRecValue key (SigRecArrayF v@{ a: valueBmg }) =
+    toQueryBoomerang key <<< toArrayBoomerag $ valueBmg
 toSpineBoomerang (SigProdF _ cs@(h :| t)) =
   foldMap1 fromConstructor cs
  where
