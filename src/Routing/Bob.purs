@@ -15,11 +15,11 @@ import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
 import Routing.Bob.Boomerangs (arrayFromList, lazy)
 import Routing.Bob.Query.Array (toArrayBoomerag)
+import Routing.Bob.Query.OptionalValue (toOptionalValueBoomerang)
 import Routing.Bob.Query.Prim (toQueryBoomerang)
 import Routing.Bob.Query.RequiredValue (toRequiredValueBoomerang)
-import Routing.Bob.Query.OptionalValue (toOptionalValueBoomerang)
-import Routing.Bob.RecursionSchemes (anaM, para, RAlgArg, Fix)
-import Routing.Bob.Signature (SigRecValueF(SigRecArrayF, SigRecOptionalValueF, SigRecRequiredValueF), fromGenericSignature, SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
+import Routing.Bob.RecursionSchemes (anaM, cata)
+import Routing.Bob.Signature (fromGenericSignature, SigRecValueF(SigRecArrayF, SigRecOptionalValueF, SigRecRequiredValueF), SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
 import Routing.Bob.UrlBoomerang (UrlBoomerang, Url, parseURL, printURL, liftStringPrs, str, int, boolean, liftStringBoomerang)
 import Text.Boomerang.Combinators (maph, nil, duck1, cons)
 import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
@@ -33,7 +33,7 @@ type UrlBoomerangForGenericSpine r = UrlBoomerang r (GenericSpine :- r)
 
 toSpineBoomerang ::
   forall r.
-    RAlgArg SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
+    SigF (UrlBoomerangForGenericSpine r) -> UrlBoomerangForGenericSpine r
 toSpineBoomerang (SigRecordF l) =
   -- add/drop record constructor
   maph SRecord ser <<<
@@ -55,12 +55,12 @@ toSpineBoomerang (SigRecordF l) =
   fieldsBmg = foldr step nil l
 
   fromRecValue ::
-    forall r'. String -> SigRecValueF { a :: UrlBoomerangForGenericSpine r', f :: Fix SigF } -> UrlBoomerangForGenericSpine r'
-  fromRecValue key (SigRecOptionalValueF just nothing v@{ a: valueBmg }) =
+    forall r'. String -> SigRecValueF (UrlBoomerangForGenericSpine r') -> UrlBoomerangForGenericSpine r'
+  fromRecValue key (SigRecOptionalValueF just nothing valueBmg) =
     toQueryBoomerang key <<< toOptionalValueBoomerang just nothing $ valueBmg
-  fromRecValue key (SigRecRequiredValueF v@{ a: valueBmg }) =
+  fromRecValue key (SigRecRequiredValueF valueBmg) =
     toQueryBoomerang key <<< toRequiredValueBoomerang $ valueBmg
-  fromRecValue key (SigRecArrayF v@{ a: valueBmg }) =
+  fromRecValue key (SigRecArrayF valueBmg) =
     toQueryBoomerang key <<< toArrayBoomerag $ valueBmg
 toSpineBoomerang (SigProdF _ cs@(h :| t)) =
   foldMap1 fromConstructor cs
@@ -70,7 +70,7 @@ toSpineBoomerang (SigProdF _ cs@(h :| t)) =
     bmg
    where
     valuesBmg =
-      intersperce (liftStringBoomerang (lit "/")) <<< map (lazy <<< _) <<< map _.a <<< _.sigValues $ constructor
+      intersperce (liftStringBoomerang (lit "/")) <<< map (lazy <<< _) <<< _.sigValues $ constructor
      where
       intersperce :: forall tok a t. (forall r. Boomerang tok r r) ->
                                      List (Boomerang tok t (a :- t)) ->
@@ -131,7 +131,7 @@ serialize (Boomerang b) s = do
 
 bob :: forall a r. (Generic a) => Proxy a -> Maybe (UrlBoomerang r (a :- r))
 bob p = do
-  sb <- para toSpineBoomerang <$> (anaM fromGenericSignature (toSignature p))
+  sb <- cata toSpineBoomerang <$> (anaM fromGenericSignature (toSignature p))
   pure (maph prs (\v -> Just (Just v)) <<< maph fromSpine (toSpine <$> _) <<< sb)
  where
   prs (Just s) = s

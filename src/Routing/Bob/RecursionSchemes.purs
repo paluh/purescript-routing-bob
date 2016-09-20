@@ -15,14 +15,6 @@ unFix (Fix f) = f
 cata :: forall a f. Functor f => (f a -> a) -> Fix f -> a
 cata alg = alg <<< (cata alg <$> _) <<< unFix
 
-type RAlgArg f a =  f { f :: Fix f, a :: a }
-type RAlg f a = RAlgArg f a -> a
-para :: forall a f. Functor f => RAlg f a -> Fix f -> a
-para rAlg =
-  rAlg <<< (g <$> _) <<< unFix
- where
-  g f = let a = (para rAlg f) in { f, a }
-
 ana :: forall a f. Functor f => (a -> f a) -> a -> Fix f
 ana coalg = Fix <<< (ana coalg <$> _) <<< coalg
 

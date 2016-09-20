@@ -13,10 +13,13 @@ import Data.Traversable (class Traversable, traverse, for)
 -- subset of GenericSignature with
 -- additional constructs in case of record fields - SigRecValueF
 -- which are covered by this library
-type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
+type ConstructorName = String
+type DataTypeName = String
+type DataConstructorF r = { sigConstructor :: ConstructorName, sigValues :: List r}
 
 data SigF r
-  = SigProdF String (NonEmpty List (DataConstructorF r))
+  = SigProdF DataTypeName (NonEmpty List (DataConstructorF r))
+  -- data types with one constructor with one value
   | SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: (SigRecValueF r) }))
   | SigBooleanF
   | SigIntF
@@ -29,7 +32,6 @@ data SigRecValueF r
   = SigRecRequiredValueF r
   | SigRecOptionalValueF JustConstructorName NothingConstrtuctorName r
   | SigRecArrayF r
---  | SigRecListValueF ConsConstructorName NilConstructorName r
 
 instance functorSigRecValueF :: Functor SigRecValueF where
   map f (SigRecRequiredValueF r) = SigRecRequiredValueF (f r)
