@@ -2,7 +2,7 @@
   "name": "purescript-routing-bob",
   "homepage": "https://github.com/paluh/purescript-routing-bob",
   "description": "Purescript library for routing which generates bidirectional routes from generic types",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "BSD",
   "repository": {
     "type": "git",
