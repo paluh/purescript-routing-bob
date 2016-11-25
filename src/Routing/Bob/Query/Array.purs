@@ -5,6 +5,7 @@ import Data.List as Data.List
 import Control.Error.Util (note)
 import Data.Array (fromFoldable)
 import Data.Either (Either(Left))
+import Data.EitherR (fmapL)
 import Data.Generic (GenericSpine(SArray))
 import Data.List (List(Nil), length, reverse, (:))
 import Data.Maybe (Maybe(Nothing))
@@ -12,34 +13,26 @@ import Data.NonEmpty ((:|))
 import Data.StrMap (empty)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(Tuple))
+import Routing.Bob.Query.Prim (Value, ValueParser, ValueSerializer, ValueBoomerang, toValueParser)
 import Routing.Bob.UrlBoomerang (UrlSerializer, Url, UrlBoomerang, UrlParser, parseURL, printURL)
-import Routing.Bob.Query.Prim (ValueParser, ValueSerializer, ValueBoomerang)
 import Text.Boomerang.HStack (type (:-), hHead, (:-))
 import Text.Boomerang.Prim (Serializer(Serializer), runSerializer, Boomerang(Boomerang))
-import Text.Parsing.Parser (PState(PState), ParseError(ParseError), ParserT(ParserT), parseFailed, runParser)
+import Text.Parsing.Parser (parseErrorMessage, runParser)
 import Text.Parsing.Parser.Pos (Position(Position))
+
 
 toArrayParser ::
   forall r.
     UrlParser r (GenericSpine :- r) ->
     ValueParser r (GenericSpine :- r)
 toArrayParser valuePrs =
-  ParserT (pure <$> prs)
+  toValueParser parseValue
  where
-  prs (PState s) =
-    let
-      result = case s.input of
-        vs -> do
-          urls <- note (parseError ("Some of values are incorrectly encoded: \"" <> show vs <> "\"") 1) (for vs parseURL)
-          fs <- for urls (flip runParser valuePrs)
-          pure $ (\r -> (SArray <<< fromFoldable <<< reverse <<< map (const <<< hHead <<< (_ $ r)) $ fs) :- r)
-    in case result of
-      Left (ParseError p) -> parseFailed s.input s.position p.message
-      _ -> { input: Nil, result, consumed: true, position: position (length s.input) }
-   where
-    parseError message column =
-      ParseError { message: message, position: Position {column: column, line: 1}}
-    position column = Position { column, line: 1}
+  parseValue :: Value -> Either String (r -> (GenericSpine :- r))
+  parseValue val = do
+    urls <- note ("Some of values are incorrectly encoded: \"" <> show val <> "\"") (for val parseURL)
+    fs <- fmapL parseErrorMessage (for urls (flip runParser valuePrs))
+    pure $ (\r -> (SArray <<< fromFoldable <<< reverse <<< map (const <<< hHead <<< (_ $ r)) $ fs) :- r)
 
 toArraySerializer ::
   forall r.

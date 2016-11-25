@@ -1,22 +1,26 @@
 module Routing.Bob.UrlBoomerang where
 
 import Prelude
-import Text.Boomerang.String as Text.Boomerang.String
-import Text.Parsing.StringParser as StringParser
+import Control.Monad.Except.Trans (runExceptT, ExceptT(..))
+import Control.Monad.State.Trans (runStateT, StateT(..))
 import Control.Error.Util (hush)
 import Data.Either (Either(Left, Right))
 import Data.Identity (Identity)
 import Data.List (singleton, List(Nil))
 import Data.Maybe (Maybe(Just, Nothing), maybe)
-import Data.StrMap (fromListWith, empty, foldMap, StrMap)
+import Data.Monoid (mempty)
+import Data.Newtype (unwrap)
+import Data.StrMap (foldMap, fromFoldableWith, StrMap)
 import Data.Tuple (snd, Tuple(Tuple), fst)
 import Data.URI (Query(Query), RelativePart(RelativePart), RelativeRef(RelativeRef), printRelativeRef, runParseRelativeRef)
 import Data.URI.RelativePart (parseRelativePart, printRelativePart)
 import Text.Boomerang.Combinators (maph)
-import Text.Boomerang.HStack (type (:-), (:-))
+import Text.Boomerang.HStack (type (:-))
 import Text.Boomerang.Prim (Boomerang(Boomerang), Serializer(Serializer))
+import Text.Boomerang.String as Text.Boomerang.String
 import Text.Boomerang.String (many1NoneOf, string, StringBoomerang)
-import Text.Parsing.Parser (Parser, PState(PState), ParserT(ParserT), unParserT)
+import Text.Parsing.Parser (runParser, Parser, ParseState(ParseState), ParserT(ParserT))
+import Text.Parsing.StringParser as StringParser
 
 -- we want to parse/serialize query and path at the same time
 type Url =
@@ -28,6 +32,8 @@ type UrlBoomerang a b = Boomerang Url a b
 type UrlParser a b = ParserT Url Identity (a -> b)
 type UrlSerializer a b = Serializer Url a b
 
+-- | XXX: This error/position handling mess will be fixed in next release
+
 parseURL :: String -> Maybe Url
 parseURL s =
   case runParseRelativeRef s of
@@ -35,10 +41,10 @@ parseURL s =
       let
         query =
           case maybeQuery of
-            Nothing -> empty
+            Nothing -> mempty
             (Just (Query q)) ->
               let toValue (Tuple k v) = maybe (Tuple k Nil) (Tuple k <<< singleton) v
-              in fromListWith (<>) <<< map toValue $ q
+              in fromFoldableWith (<>) <<< map toValue $ q
         path =
           case maybePath of
             Nothing -> ""
@@ -59,13 +65,19 @@ printURL { path, query } = do
   toQueryValue name Nil = singleton (Tuple name Nothing)
   toQueryValue name vs = map (Tuple name <<< Just) vs
 
-liftStringPrs :: forall p a. Parser String a -> Parser { path :: String | p } a
+-- XXX: quite hacky way to lift a parser
+--      * position information is not accurate
+--      * consume information is diregarded
+liftStringPrs ::
+  forall a e.
+  Parser String a -> Parser { path :: String | e } a
 liftStringPrs prs =
-  ParserT prs'
+  ParserT <<< ExceptT <<< StateT $ parser
  where
-  prs' (PState i) = do
-    result <- unParserT prs (PState { input: i.input.path, position: i.position })
-    pure $ (result { input = i.input { path = result.input }})
+  parser (ParseState i@{path} position c) = do
+    Tuple e (ParseState path' p' _) <- runStateT (runExceptT (unwrap prs)) (ParseState path position false)
+    let i' = i { path = path' }
+    pure (Tuple e (ParseState i' p' c))
 
 liftStringSer :: forall p s s'. Serializer String s s' -> Serializer { path :: String | p } s s'
 liftStringSer (Serializer ser) =

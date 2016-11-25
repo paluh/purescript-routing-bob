@@ -10,7 +10,7 @@ import Data.List (List(Cons, Nil), null)
 import Data.Maybe (Maybe(Just, Nothing), fromMaybe)
 import Data.NonEmpty (foldMap1, (:|))
 import Data.StrMap (empty)
-import Data.String (split)
+import Data.String (Pattern(..), split)
 import Data.Tuple (Tuple(Tuple))
 import Partial.Unsafe (unsafePartial)
 import Routing.Bob.Boomerangs (arrayFromList, lazy)
@@ -141,7 +141,7 @@ foreign import camelsToHyphens :: String -> String
 
 serializeConstructorName :: String -> String
 serializeConstructorName n =
-  camelsToHyphens (fromMaybe n (Data.Array.last <<< split "." $ n))
+  camelsToHyphens (fromMaybe n (Data.Array.last <<< split (Pattern ".") $ n))
 
 genericToUrl :: forall a. (Generic a) => a -> Maybe String
 genericToUrl a = do
