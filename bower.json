@@ -29,7 +29,7 @@
   "devDependencies": {
     "purescript-debug": "2.0.0",
     "purescript-test-unit": "10.0.1",
-    "purescript-unsafe-coerce": "1.0.0",
+    "purescript-unsafe-coerce": "2.0.0",
     "purescript-psci-support": "^2.0.0"
   }
 }
