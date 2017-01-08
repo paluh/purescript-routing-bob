@@ -2,65 +2,6 @@
 
 Let me introduce to you Bob The Router (known also as "Pendulum Bob") - simple (but usable) example of partial bidirectional routes generator based on [purescript-boomerang](https://github.com/paluh/purescript-boomerang) and [purescript-generics](https://github.com/paluh/purescript-gnerics).
 
-## Show me your biceps Bob!
-
-Here you go...
-
-Let's define routing for simple user component which handles to views: 
-    - profile view which contains two tabs
-    - edit view with three steps
-
-```purescript
-data InterfaceTheme = Gore | Pinky | Dirty
-data ProfileEditStep = PersonalInformation | InterfaceSettings | NotificationSettings
-data ProfileTab = ProfileDetails | UserFavorites
-data Notification = None | Email | Smpt
-
-data Routes
-  = ProfileEdit
-      ProfileEditSteps
-      { fullName :: String
-      , email :: String
-      , descrption :: Maybe String
-      , age :: Maybe Int
-      , theme :: InterfaceTheme
-      , interaface :: Interface
-      , messageNotification :: Notification
-      , 
-      }
-  | Profile ProfileTab
-
-
-```
-
-## Which language and type constructs are covered?
-
-Not all types and language constructs are covered by this library. Some are treated differently in records than in paths.
-
-In general sum and product types are encoded as url path, but if you use records as a value in any field it will correspond to query parameters (there is no name collission detection implemented yet, so don't use the same names for records fields).
-You can have arbitrary nesting of data types which will be translated into nested paths of constructors follwed by related values (only values of records fields are encoded in urls).
-
-Here you have internal representation of language constructs which are already covered by this library:
-
-    type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
-
-    data SigF r
-      = SigProdF String (NonEmpty List (DataConstructorF r))
-      | SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: (SigRecValueF r) }))
-      | SigBooleanF
-      | SigIntF
-      | SigStringF
-
-    type JustConstructorName = String
-    type NothingConstrtuctorName = String
-
-    data SigRecValueF r
-      = SigRecRequiredValueF r
-      | SigRecOptionalValueF JustConstructorName NothingConstrtuctorName r
-      | SigRecArrayF r
-
-If you have any ideas how to nicely extend this set please let me know...
-
 ## Installation
 
 ```shell
@@ -189,14 +130,33 @@ Just to give you a hint what this library does, let's copy some tests' fragments
     equal (Just sObj) (fromUrl r "?optParamInt=8&optParamBoolean="))
     ```
 
+## Which language and type constructs are covered?
 
-## Limitations
+Not all types and language constructs are covered by this library. Some are treated differently in records than in paths.
 
-It is called `Just bob`, because it contains arbitrary, nonconfigurable and partial routes generators based on `Generic` instances.
-When it will grow up maybe it will became `purescript-boomerang-routing`.
+In general sum and product types are encoded as url path, but if you use records as a value in any field it will correspond to query parameters (there is no name collission detection implemented yet, so don't use the same names for records fields).
+You can have arbitrary nesting of data types which will be translated into nested paths of constructors follwed by related values (only values of records fields are encoded in urls).
 
-Currently you can generate routes only for some subset of purescript types - if you want to extend this set or have proposition how to encode other types, I'm really open to merge pull requests.
+Here you have internal representation of language constructs which are already covered by this library:
 
+    type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
+
+    data SigF r
+      = SigProdF String (NonEmpty List (DataConstructorF r))
+      | SigRecordF (NonEmpty List ({ recLabel :: String, recValue :: (SigRecValueF r) }))
+      | SigBooleanF
+      | SigIntF
+      | SigStringF
+
+    type JustConstructorName = String
+    type NothingConstrtuctorName = String
+
+    data SigRecValueF r
+      = SigRecRequiredValueF r
+      | SigRecOptionalValueF JustConstructorName NothingConstrtuctorName r
+      | SigRecArrayF r
+
+If you have any ideas how to nicely extend this set please let me know...
 
 ## Docs
 You can check `test/Main.purs` for more examples... real docs comming soooooon ;-)
