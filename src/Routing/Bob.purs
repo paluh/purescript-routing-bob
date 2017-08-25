@@ -1,9 +1,10 @@
 module Routing.Bob where
 
 import Prelude
-import Data.Array as Data.Array
+
 import Control.Error.Util (hush)
 import Control.Monad.Eff.Exception.Unsafe (unsafeThrow)
+import Data.Array as Data.Array
 import Data.Foldable (foldr)
 import Data.Generic (toSpine, class Generic, GenericSpine(SString, SInt, SBoolean, SRecord, SProd), fromSpine, toSignature)
 import Data.List (List(Cons, Nil), null)
@@ -12,6 +13,7 @@ import Data.NonEmpty (foldMap1, (:|))
 import Data.StrMap (empty)
 import Data.String (Pattern(..), split)
 import Data.Tuple (Tuple(Tuple))
+import Debug.Trace (traceAnyA)
 import Partial.Unsafe (unsafePartial)
 import Routing.Bob.Boomerangs (arrayFromList, lazy)
 import Routing.Bob.Query.Array (toArrayBoomerag)
@@ -22,7 +24,7 @@ import Routing.Bob.RecursionSchemes (anaM, cata)
 import Routing.Bob.Signature (fromGenericSignature, SigRecValueF(SigRecArrayF, SigRecOptionalValueF, SigRecRequiredValueF), SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
 import Routing.Bob.UrlBoomerang (UrlBoomerang, Url, parseURL, printURL, liftStringPrs, str, int, boolean, liftStringBoomerang)
 import Text.Boomerang.Combinators (maph, nil, duck1, cons)
-import Text.Boomerang.HStack (hSingleton, hNil, hHead, HNil, type (:-), (:-))
+import Text.Boomerang.HStack (type (:-), HNil, hHead, hNil, hSingleton)
 import Text.Boomerang.Prim (Boomerang(Boomerang), runSerializer)
 import Text.Boomerang.String (lit)
 import Text.Parsing.Parser (runParser)
@@ -76,8 +78,8 @@ toSpineBoomerang (SigProdF _ cs@(h :| t)) =
                                      List (Boomerang tok t (a :- t)) ->
                                      Boomerang tok t (List a :- t)
       intersperce _ Nil = nil
-      intersperce sep (Cons b t) =
-        cons <<< duck1 b <<< foldr step nil t
+      intersperce sep (Cons b t') =
+        cons <<< duck1 b <<< foldr step nil t'
        where
         step e l = sep <<< cons <<< duck1 e <<< l
 
@@ -167,5 +169,8 @@ toUrl (Router bmg) a =
   unsafePartial (case serialize bmg a >>= printURL of Just s -> s)
 
 fromUrl :: forall a. Router a -> String -> Maybe a
-fromUrl (Router bmg) url =
-  parseURL url >>= parse bmg
+fromUrl (Router bmg) url = do
+  traceAnyA url
+  p ← parseURL url
+  traceAnyA p
+  parse bmg p

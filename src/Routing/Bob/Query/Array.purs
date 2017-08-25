@@ -4,12 +4,11 @@ import Prelude
 import Data.List as Data.List
 import Control.Error.Util (note)
 import Data.Array (fromFoldable)
-import Data.Either (Either(Left))
+import Data.Either (Either)
 import Data.EitherR (fmapL)
 import Data.Generic (GenericSpine(SArray))
-import Data.List (List(Nil), length, reverse, (:))
+import Data.List (reverse)
 import Data.Maybe (Maybe(Nothing))
-import Data.NonEmpty ((:|))
 import Data.StrMap (empty)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(Tuple))
@@ -18,7 +17,6 @@ import Routing.Bob.UrlBoomerang (UrlSerializer, Url, UrlBoomerang, UrlParser, pa
 import Text.Boomerang.HStack (type (:-), hHead, (:-))
 import Text.Boomerang.Prim (Serializer(Serializer), runSerializer, Boomerang(Boomerang))
 import Text.Parsing.Parser (parseErrorMessage, runParser)
-import Text.Parsing.Parser.Pos (Position(Position))
 
 
 toArrayParser ::

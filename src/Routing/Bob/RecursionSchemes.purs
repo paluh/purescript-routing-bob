@@ -18,5 +18,5 @@ cata alg = alg <<< (cata alg <$> _) <<< unFix
 ana :: forall a f. Functor f => (a -> f a) -> a -> Fix f
 ana coalg = Fix <<< (ana coalg <$> _) <<< coalg
 
-anaM :: forall a f m. (Functor f, Monad m, Traversable f) => (a -> m (f a)) -> a -> m (Fix f)
+anaM :: forall a f m. Functor f => Monad m => Traversable f => (a -> m (f a)) -> a -> m (Fix f)
 anaM coalgM = ((map Fix) <<< traverse (anaM coalgM)) <=< coalgM

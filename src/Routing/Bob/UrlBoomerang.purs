@@ -1,9 +1,11 @@
 module Routing.Bob.UrlBoomerang where
 
 import Prelude
+
+import Control.Alt ((<|>))
+import Control.Error.Util (hush)
 import Control.Monad.Except.Trans (runExceptT, ExceptT(..))
 import Control.Monad.State.Trans (runStateT, StateT(..))
-import Control.Error.Util (hush)
 import Data.Either (Either(Left, Right))
 import Data.Identity (Identity)
 import Data.List (singleton, List(Nil))
@@ -11,15 +13,18 @@ import Data.Maybe (Maybe(Just, Nothing), maybe)
 import Data.Monoid (mempty)
 import Data.Newtype (unwrap)
 import Data.StrMap (foldMap, fromFoldableWith, StrMap)
+import Data.String (Pattern(..), stripSuffix)
 import Data.Tuple (snd, Tuple(Tuple), fst)
-import Data.URI (Query(Query), RelativePart(RelativePart), RelativeRef(RelativeRef), printRelativeRef, runParseRelativeRef)
-import Data.URI.RelativePart (parseRelativePart, printRelativePart)
+import Data.URI (Query(Query), RelativePart(RelativePart), RelativeRef(RelativeRef))
+import Data.URI.RelativePart as RelativePart
+import Data.URI.RelativeRef as RelativeRef
+import Debug.Trace (spy, traceA, traceAnyA)
 import Text.Boomerang.Combinators (maph)
 import Text.Boomerang.HStack (type (:-))
 import Text.Boomerang.Prim (Boomerang(Boomerang), Serializer(Serializer))
-import Text.Boomerang.String as Text.Boomerang.String
 import Text.Boomerang.String (many1NoneOf, string, StringBoomerang)
-import Text.Parsing.Parser (runParser, Parser, ParseState(ParseState), ParserT(ParserT))
+import Text.Boomerang.String as Text.Boomerang.String
+import Text.Parsing.Parser (Parser, ParseState(ParseState), ParserT(ParserT))
 import Text.Parsing.StringParser as StringParser
 
 -- we want to parse/serialize query and path at the same time
@@ -36,7 +41,7 @@ type UrlSerializer a b = Serializer Url a b
 
 parseURL :: String -> Maybe Url
 parseURL s =
-  case runParseRelativeRef s of
+  case (StringParser.runParser RelativeRef.parser) s of
     Right (RelativeRef (RelativePart _ maybePath) maybeQuery _) ->
       let
         query =
@@ -48,7 +53,7 @@ parseURL s =
         path =
           case maybePath of
             Nothing -> ""
-            Just p -> printRelativePart (RelativePart Nothing maybePath)
+            Just p -> RelativePart.print (RelativePart Nothing maybePath)
       in
         Just
           { query: query
@@ -58,8 +63,9 @@ parseURL s =
 
 printURL :: Url -> Maybe String
 printURL { path, query } = do
-  relativePart <- hush $ StringParser.runParser parseRelativePart path
-  pure $ printRelativeRef (RelativeRef relativePart (Just (Query query')) Nothing)
+  relativePart <- hush $ StringParser.runParser RelativePart.parser path
+  let url = RelativeRef.print (RelativeRef relativePart (Just (Query query')) Nothing)
+  (stripSuffix (Pattern "?") url) <|> Just url
  where
   query' = foldMap toQueryValue query
   toQueryValue name Nil = singleton (Tuple name Nothing)

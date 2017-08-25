@@ -14,7 +14,7 @@ import Data.StrMap (StrMap, empty)
 import Data.String (dropWhile)
 import Data.Tuple (Tuple(Tuple))
 import Data.URI (Query(Query))
-import Data.URI.Query (parseQuery)
+import Data.URI.Query as Query
 import Routing.Bob (Router, genericFromUrl, fromUrl, toUrl, genericToUrl, router)
 import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang)
 import Test.Unit (suite, failure, test)
@@ -188,7 +188,8 @@ main = runTest $ suite "Routing.Bob handles" do
       let obj = PrimitivePositionalValue 8
       router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
         equal "8" (toUrl r obj)
-        equal (Just obj) (fromUrl r "8"))
+        equal (Just obj) (fromUrl r "8")
+        equal (Just obj) (fromUrl r "8?"))
     test "and consumes whole input" do
       let obj = PrimitivePositionalValue 8
       router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
@@ -231,6 +232,17 @@ main = runTest $ suite "Routing.Bob handles" do
         equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
         equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
 
+    -- test "through generic helpers mixed with boomerang generic" do
+    --     equal
+    --       (Just "first-constructor/8/on/9")
+    --       (genericToUrl (FirstConstructor 8 true 9))
+    --     equal
+    --       (Just "second-constructor/off")
+    --       (genericToUrl (SecondConstructor false))
+
+    --     equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
+    --     equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
+
     test "which contains nested structure with primitive values" do
       let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
       router' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
@@ -253,10 +265,10 @@ main = runTest $ suite "Routing.Bob handles" do
         equal "profile/minimized" (toUrl r (AppRoute Profile Minimized)))
 
     test "and uses correct escaping for string values" do
-      let obj = StringValue "this/is?test#string"
+      let obj = StringValue "this is test%string"
       router' (Proxy :: Proxy StringValue) (\r -> do
-        equal "this%2Fis%3Ftest%23string" (toUrl r obj)
-        equal (Just obj) (fromUrl r "this%2Fis%3Ftest%23string"))
+        equal "this%20is%20test%25string" (toUrl r obj)
+        equal (Just obj) (fromUrl r "this%20is%20test%25string"))
   suite "query with optional values" do
     let
       p = ParamsWithMaybes { optParamBoolean: Just false, optParamInt: Nothing, optParamString: Nothing }
@@ -279,7 +291,7 @@ main = runTest $ suite "Routing.Bob handles" do
       test "through generic helper" do
         equal
           (Just <<< Query $ q)
-          (genericToUrl p >>= (\q' -> hush <<< runParser parseQuery <<< dropWhile ('?' == _) $ q'))
+          (genericToUrl p >>= (\q' -> hush <<< runParser Query.parser <<< dropWhile ('?' == _) $ q'))
       test "for constructor with records and maybe values" do
         let fObj = FirstConstructorWithRecord 8 { int1: Just 8, string1: "string1value" }
             sObj = SecondConstructorWithRecord "test" { int2: Nothing, string2: "string2value", boolean2: false }
