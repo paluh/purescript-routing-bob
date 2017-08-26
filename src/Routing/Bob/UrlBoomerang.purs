@@ -18,7 +18,6 @@ import Data.Tuple (snd, Tuple(Tuple), fst)
 import Data.URI (Query(Query), RelativePart(RelativePart), RelativeRef(RelativeRef))
 import Data.URI.RelativePart as RelativePart
 import Data.URI.RelativeRef as RelativeRef
-import Debug.Trace (spy, traceA, traceAnyA)
 import Text.Boomerang.Combinators (maph)
 import Text.Boomerang.HStack (type (:-))
 import Text.Boomerang.Prim (Boomerang(Boomerang), Serializer(Serializer))

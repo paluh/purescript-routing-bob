@@ -13,7 +13,6 @@ import Data.NonEmpty (foldMap1, (:|))
 import Data.StrMap (empty)
 import Data.String (Pattern(..), split)
 import Data.Tuple (Tuple(Tuple))
-import Debug.Trace (traceAnyA)
 import Partial.Unsafe (unsafePartial)
 import Routing.Bob.Boomerangs (arrayFromList, lazy)
 import Routing.Bob.Query.Array (toArrayBoomerag)
@@ -170,7 +169,5 @@ toUrl (Router bmg) a =
 
 fromUrl :: forall a. Router a -> String -> Maybe a
 fromUrl (Router bmg) url = do
-  traceAnyA url
   p ← parseURL url
-  traceAnyA p
   parse bmg p
