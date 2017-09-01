@@ -1,20 +1,18 @@
 module Routing.Bob.Query.RequiredValue where
 
 import Prelude
+
 import Control.Error.Util (note)
-import Control.Monad.Error.Class (throwError)
 import Data.Either (Either(Left))
 import Data.EitherR (fmapL)
-import Data.List (List(Nil), length, (:))
-import Data.NonEmpty ((:|))
+import Data.List (List(Nil), (:))
 import Data.StrMap (empty)
 import Data.Tuple (Tuple(Tuple))
 import Routing.Bob.Query.Prim (ValueParser, ValueSerializer, ValueBoomerang, Value, toValueParser)
-import Routing.Bob.UrlBoomerang (UrlBoomerang, UrlSerializer, UrlParser, printURL, parseURL)
+import Routing.Bob.UrlBoomerang (Url(..), UrlBoomerang, UrlParser, UrlSerializer, parseURL, printURL)
 import Text.Boomerang.HStack (type (:-), (:-))
-import Text.Boomerang.Prim (Serializer(Serializer), runSerializer, Boomerang(Boomerang))
-import Text.Parsing.Parser (parseErrorMessage, runParser)
-import Text.Parsing.Parser.Pos (Position(Position))
+import Text.Boomerang.Prim (Boomerang(Boomerang), Serializer(Serializer), parse1, runSerializer)
+import Text.Parsing.Parser (parseErrorMessage)
 
 toRequiredValueParser :: forall a r. UrlParser r (a :- r) -> ValueParser r (a :- r)
 toRequiredValueParser urlPrs =
@@ -25,7 +23,7 @@ toRequiredValueParser urlPrs =
     Nil -> Left "Missing value"
     (v : Nil) -> do
       url <- note ("Incorrect uri encoded in query param value: \"" <> v <> "\"") (parseURL v)
-      fmapL parseErrorMessage (runParser url urlPrs)
+      fmapL parseErrorMessage <<< parse1 urlPrs $ url
     _ -> Left "Multiple values but expecting singleton"
 
 toRequiredValueSerializer ::
@@ -37,7 +35,7 @@ toRequiredValueSerializer valueSer =
  where
   ser (a :- r) = do
     (Tuple ser' r')  <- runSerializer valueSer (a :- r)
-    v' <- printURL $ ser' {path: "", query: empty}
+    v' <- printURL $ ser' (Url {path: "", query: empty})
     pure (Tuple (v' : _) r')
 
 toRequiredValueBoomerang ::

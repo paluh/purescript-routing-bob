@@ -1,6 +1,7 @@
 module Test.Main where
 
 import Prelude
+
 import Control.Error.Util (hush)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Aff.AVar (AVAR)
@@ -8,6 +9,7 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Timer (TIMER)
 import Data.Generic (gShow, class Generic, gEq)
+import Data.Generic.Rep as Generic.Rep
 import Data.List (List(Nil), (:))
 import Data.Maybe (Maybe(..))
 import Data.StrMap (StrMap, empty)
@@ -15,7 +17,7 @@ import Data.String (dropWhile)
 import Data.Tuple (Tuple(Tuple))
 import Data.URI (Query(Query))
 import Data.URI.Query as Query
-import Routing.Bob (Router, genericFromUrl, fromUrl, toUrl, genericToUrl, router)
+import Routing.Bob (Router, defaultOptions, fromUrl, genericFromUrl', genericToUrl', router, router', toUrl)
 import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang)
 import Test.Unit (suite, failure, test)
 import Test.Unit.Assert (equal)
@@ -61,6 +63,7 @@ instance eqUnionOfPrimitivePositionalValues :: Eq UnionOfPrimitivePositionalValu
   eq = gEq
 instance showUnionOfPrimitivePositionalValues :: Show UnionOfPrimitivePositionalValues where
   show = gShow
+derive instance genericRepUnionOfPrimitivePositionalValues ∷ Generic.Rep.Generic UnionOfPrimitivePositionalValues _
 
 data NestedStructureWithPrimitivePositionvalValue =
   NestedStructureWithPrimitivePositionvalValue PrimitivePositionalValue
@@ -165,6 +168,14 @@ derive instance genericSideBarRoute :: Generic SideBarRoute
 data AppRoute = AppRoute MainWindowRoute SideBarRoute
 derive instance genericAppRoute :: Generic AppRoute
 
+data UrlsWithRoot = Root | Page1 String | Page2 Int
+derive instance genericUrlsWithRoot ∷ Generic UrlsWithRoot
+instance eqUrlsWithRoot :: Eq UrlsWithRoot where
+  eq = gEq
+instance showUrlsWithRoot :: Show UrlsWithRoot where
+  show = gShow
+
+
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
                       , console :: CONSOLE
@@ -175,36 +186,36 @@ main = runTest $ suite "Routing.Bob handles" do
     path s = { path: s, query: empty :: StrMap (Maybe String) }
     query q = { path: "", query: q }
   let
-    router' :: forall a e'. (Generic a) =>
+    withRouter :: forall a e'. (Generic a) =>
       Proxy a ->
       (Router a -> Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit) ->
       Aff (timer :: TIMER , avar :: AVAR , testOutput :: TESTOUTPUT | e') Unit
-    router' p t = (case router p of
+    withRouter p t = (case router' p of
       Nothing -> failure ("Router generation failed")
       (Just b)-> t b)
 
   suite "url path" do
     test "which contains constructor with single, primitive value" do
       let obj = PrimitivePositionalValue 8
-      router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
+      withRouter (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
         equal "8" (toUrl r obj)
         equal (Just obj) (fromUrl r "8")
         equal (Just obj) (fromUrl r "8?"))
     test "and consumes whole input" do
       let obj = PrimitivePositionalValue 8
-      router' (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
+      withRouter (Proxy :: Proxy PrimitivePositionalValue) (\r -> do
         equal (Nothing) (fromUrl r "8/something-more"))
 
     test "which contains construtor with multiple, primitive values" do
       let obj = PrimitivePositionalValues 8 true 9
-      router' (Proxy :: Proxy PrimitivePositionalValues) (\r -> do
+      withRouter (Proxy :: Proxy PrimitivePositionalValues) (\r -> do
         equal "8/on/9" (toUrl r obj)
         equal (Just obj) (fromUrl r "8/on/9"))
 
     test "which contains multiple empty constructors" do
        let fObj = FirstEmptyConstructor
            sObj = SecondEmptyConstructor
-       router' (Proxy :: Proxy UnionOfEmptyConstructors) (\r -> do
+       withRouter (Proxy :: Proxy UnionOfEmptyConstructors) (\r -> do
          equal "first-empty-constructor" (toUrl r fObj)
          equal "second-empty-constructor" (toUrl r sObj)
 
@@ -214,38 +225,52 @@ main = runTest $ suite "Routing.Bob handles" do
     test "which contains multiple non empty constructors" do
       let fObj = FirstConstructor 8 true 9
           sObj = SecondConstructor false
-      router' (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\r -> do
+      withRouter (Proxy :: Proxy UnionOfPrimitivePositionalValues) (\r -> do
         equal "first-constructor/8/on/9" (toUrl r fObj)
         equal "second-constructor/off" (toUrl r sObj)
 
         equal (Just fObj) (fromUrl r "first-constructor/8/on/9")
         equal (Just sObj) (fromUrl r "second-constructor/off"))
 
+    test "root path encoding" do
+      let rObj = Root
+          serializeConstructorName "Test.Main.Root" = ""
+          serializeConstructorName s = defaultOptions.serializeConstructorName s
+      case router ({ serializeConstructorName: serializeConstructorName }) (Proxy :: Proxy UrlsWithRoot) of
+        Nothing -> failure ("Router generation failed")
+        Just r -> do
+          equal "" (toUrl r Root)
+          equal (Just Root) (fromUrl r "")
+
+          equal "page1/param" (toUrl r (Page1 "param"))
+          equal "page2/8" (toUrl r (Page2 8))
+          equal (Just (Page1 "param")) (fromUrl r "page1/param")
+
     test "through generic helpers" do
         equal
           (Just "first-constructor/8/on/9")
-          (genericToUrl (FirstConstructor 8 true 9))
+          (genericToUrl' (FirstConstructor 8 true 9))
         equal
           (Just "second-constructor/off")
-          (genericToUrl (SecondConstructor false))
+          (genericToUrl' (SecondConstructor false))
 
-        equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
-        equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
+        equal (Just (FirstConstructor 8 true 9)) (genericFromUrl' "first-constructor/8/on/9")
+        equal (Just (SecondConstructor false)) (genericFromUrl' "second-constructor/off")
 
     -- test "through generic helpers mixed with boomerang generic" do
     --     equal
     --       (Just "first-constructor/8/on/9")
-    --       (genericToUrl (FirstConstructor 8 true 9))
+    --       (genericToUrl' (FirstConstructor 8 true 9))
     --     equal
     --       (Just "second-constructor/off")
-    --       (genericToUrl (SecondConstructor false))
+    --       (genericToUrl' (SecondConstructor false))
 
-    --     equal (Just (FirstConstructor 8 true 9)) (genericFromUrl "first-constructor/8/on/9")
-    --     equal (Just (SecondConstructor false)) (genericFromUrl "second-constructor/off")
+    --     equal (Just (FirstConstructor 8 true 9)) (genericFromUrl' "first-constructor/8/on/9")
+    --     equal (Just (SecondConstructor false)) (genericFromUrl' "second-constructor/off")
 
     test "which contains nested structure with primitive values" do
       let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
-      router' (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
+      withRouter (Proxy :: Proxy NestedStructureWithPrimitivePositionvalValue) (\r -> do
         equal "8" (toUrl r obj)
         equal (Just obj) (fromUrl r "8"))
 
@@ -253,7 +278,7 @@ main = runTest $ suite "Routing.Bob handles" do
       let fObj = FirstOuterConstructor (FirstConstructor 100 true 888)
           sObj = SecondOuterConstructor (PrimitivePositionalValues 8 false 100)
 
-      router' (Proxy :: Proxy NestedStructures) (\r -> do
+      withRouter (Proxy :: Proxy NestedStructures) (\r -> do
         equal "first-outer-constructor/first-constructor/100/on/888" (toUrl r fObj)
         equal (Just fObj) (fromUrl r "first-outer-constructor/first-constructor/100/on/888")
 
@@ -261,12 +286,12 @@ main = runTest $ suite "Routing.Bob handles" do
         equal (Just sObj) (fromUrl r "second-outer-constructor/8/off/100"))
 
     test "which contains multiple nesteted structures with multiple constructors" do
-      router' (Proxy :: Proxy AppRoute) (\r -> do
+      withRouter (Proxy :: Proxy AppRoute) (\r -> do
         equal "profile/minimized" (toUrl r (AppRoute Profile Minimized)))
 
     test "and uses correct escaping for string values" do
       let obj = StringValue "this is test%string"
-      router' (Proxy :: Proxy StringValue) (\r -> do
+      withRouter (Proxy :: Proxy StringValue) (\r -> do
         equal "this%20is%20test%25string" (toUrl r obj)
         equal (Just obj) (fromUrl r "this%20is%20test%25string"))
   suite "query with optional values" do
@@ -276,12 +301,12 @@ main = runTest $ suite "Routing.Bob handles" do
       test "through generic helper from String" do
         equal
           (Just p)
-          (genericFromUrl "?optParamString&optParamBoolean=off")
+          (genericFromUrl' "?optParamString&optParamBoolean=off")
     suite "serialization" do
       test "through generic helper from String" do
         equal
           (Just "?optParamBoolean=off")
-          (genericToUrl p)
+          (genericToUrl' p)
 
   suite "query" do
     let
@@ -291,26 +316,26 @@ main = runTest $ suite "Routing.Bob handles" do
       test "through generic helper" do
         equal
           (Just <<< Query $ q)
-          (genericToUrl p >>= (\q' -> hush <<< runParser Query.parser <<< dropWhile ('?' == _) $ q'))
+          (genericToUrl' p >>= (\q' -> hush <<< runParser Query.parser <<< dropWhile ('?' == _) $ q'))
       test "for constructor with records and maybe values" do
         let fObj = FirstConstructorWithRecord 8 { int1: Just 8, string1: "string1value" }
             sObj = SecondConstructorWithRecord "test" { int2: Nothing, string2: "string2value", boolean2: false }
 
-        router' (Proxy :: Proxy SumWithInternalRecords) (\r -> do
+        withRouter (Proxy :: Proxy SumWithInternalRecords) (\r -> do
           equal "first-constructor-with-record/8/?string1=string1value&int1=8" (toUrl r fObj)
           equal "second-constructor-with-record/test/?string2=string2value&boolean2=off" (toUrl r sObj))
       test "for constructor with records and values isomorphic to maybe" do
         let fObj = ParamsWithOptionals { optParamString: Value "test", optParamInt: Missing, optParamBoolean: Missing}
             sObj = ParamsWithOptionals { optParamString: Missing, optParamInt: Value 8, optParamBoolean: Missing}
 
-        router' (Proxy :: Proxy ParamsWithOptionals) (\r -> do
+        withRouter (Proxy :: Proxy ParamsWithOptionals) (\r -> do
           equal "?optParamString=test" (toUrl r fObj)
           equal (Just sObj) (fromUrl r "?optParamInt=8&optParamBoolean"))
     suite "parsing" do
       test "through generic helper from String" do
         equal
           (Just p)
-          (genericFromUrl "?paramString=test&paramInt=8&paramBoolean=off")
+          (genericFromUrl' "?paramString=test&paramInt=8&paramBoolean=off")
 
   suite "query with arrays" do
     let
@@ -319,9 +344,9 @@ main = runTest $ suite "Routing.Bob handles" do
       test "through generic helper from String" do
         equal
           (Just p)
-          (genericFromUrl "?arrayOfInts=1&arrayOfStrings=string1&arrayOfStrings=string2")
+          (genericFromUrl' "?arrayOfInts=1&arrayOfStrings=string1&arrayOfStrings=string2")
     suite "serialization" do
       test "through generic helper to String" do
         equal
           (Just "?arrayOfStrings=string1&arrayOfStrings=string2&arrayOfInts=1")
-          (genericToUrl p)
+          (genericToUrl' p)

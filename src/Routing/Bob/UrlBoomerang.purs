@@ -7,11 +7,12 @@ import Control.Error.Util (hush)
 import Control.Monad.Except.Trans (runExceptT, ExceptT(..))
 import Control.Monad.State.Trans (runStateT, StateT(..))
 import Data.Either (Either(Left, Right))
-import Data.Identity (Identity)
+import Data.Generic.Rep (class Generic)
+import Data.Generic.Rep.Eq (genericEq)
 import Data.List (singleton, List(Nil))
 import Data.Maybe (Maybe(Just, Nothing), maybe)
-import Data.Monoid (mempty)
-import Data.Newtype (unwrap)
+import Data.Monoid (class Monoid, mempty)
+import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.StrMap (foldMap, fromFoldableWith, StrMap)
 import Data.String (Pattern(..), stripSuffix)
 import Data.Tuple (snd, Tuple(Tuple), fst)
@@ -20,20 +21,36 @@ import Data.URI.RelativePart as RelativePart
 import Data.URI.RelativeRef as RelativeRef
 import Text.Boomerang.Combinators (maph)
 import Text.Boomerang.HStack (type (:-))
-import Text.Boomerang.Prim (Boomerang(Boomerang), Serializer(Serializer))
+import Text.Boomerang.Prim (Boomerang(Boomerang), Parsers(..), Serializer(Serializer))
 import Text.Boomerang.String (many1NoneOf, string, StringBoomerang)
 import Text.Boomerang.String as Text.Boomerang.String
-import Text.Parsing.Parser (Parser, ParseState(ParseState), ParserT(ParserT))
+import Text.Parsing.Parser (ParseState(ParseState), ParserT(ParserT))
 import Text.Parsing.StringParser as StringParser
 
 -- we want to parse/serialize query and path at the same time
-type Url =
+newtype Url = Url
   { path :: String
   , query :: StrMap (List String)
   }
+derive instance genericRepUrl :: Generic Url _
+derive instance newtypeUrl :: Newtype Url _
+instance eqUrl :: Eq Url where
+  eq = genericEq
+instance semigroupUrl :: Semigroup Url where
+  append u1 u2 =
+    let
+      u1' = unwrap u1
+      u2' = unwrap u2
+    in
+      Url
+        { path: u1'.path <> u2'.path
+        , query: u1'.query <> u2'.query
+        }
+instance monoidUrl :: Monoid Url where
+  mempty = Url { path: mempty, query: mempty }
 
 type UrlBoomerang a b = Boomerang Url a b
-type UrlParser a b = ParserT Url Identity (a -> b)
+type UrlParser a b = Parsers Url (a -> b)
 type UrlSerializer a b = Serializer Url a b
 
 -- | XXX: This error/position handling mess will be fixed in next release
@@ -54,14 +71,14 @@ parseURL s =
             Nothing -> ""
             Just p -> RelativePart.print (RelativePart Nothing maybePath)
       in
-        Just
+        Just <<< wrap $
           { query: query
           , path: path
           }
     (Left _) -> Nothing
 
 printURL :: Url -> Maybe String
-printURL { path, query } = do
+printURL (Url { path, query }) = do
   relativePart <- hush $ StringParser.runParser RelativePart.parser path
   let url = RelativeRef.print (RelativeRef relativePart (Just (Query query')) Nothing)
   (stripSuffix (Pattern "?") url) <|> Just url
@@ -74,17 +91,17 @@ printURL { path, query } = do
 --      * position information is not accurate
 --      * consume information is diregarded
 liftStringPrs ::
-  forall a e.
-  Parser String a -> Parser { path :: String | e } a
+  forall a.
+  Parsers String a -> Parsers Url a
 liftStringPrs prs =
-  ParserT <<< ExceptT <<< StateT $ parser
+  Parsers <<< ParserT <<< ExceptT <<< StateT $ parser
  where
-  parser (ParseState i@{path} position c) = do
-    Tuple e (ParseState path' p' _) <- runStateT (runExceptT (unwrap prs)) (ParseState path position false)
-    let i' = i { path = path' }
+  parser (ParseState (Url i@{path}) position c) = do
+    Tuple e (ParseState path' p' _) <- runStateT (runExceptT (unwrap <<< unwrap $ prs)) (ParseState path position false)
+    let i' = Url (i { path = path' })
     pure (Tuple e (ParseState i' p' c))
 
-liftStringSer :: forall p s s'. Serializer String s s' -> Serializer { path :: String | p } s s'
+liftStringSer :: forall s s'. Serializer String s s' -> Serializer Url s s'
 liftStringSer (Serializer ser) =
   Serializer ser'
  where
@@ -92,7 +109,7 @@ liftStringSer (Serializer ser) =
     t <- ser a
     let
       f = fst t
-      f' r = r { path = f r.path }
+      f' (Url r) = Url (r { path = f r.path })
     pure (Tuple f' (snd t))
 
 liftStringBoomerang :: forall r r'. StringBoomerang r r' -> UrlBoomerang r r'

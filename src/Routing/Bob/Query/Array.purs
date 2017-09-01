@@ -1,22 +1,23 @@
 module Routing.Bob.Query.Array where
 
 import Prelude
-import Data.List as Data.List
+
 import Control.Error.Util (note)
 import Data.Array (fromFoldable)
 import Data.Either (Either)
 import Data.EitherR (fmapL)
 import Data.Generic (GenericSpine(SArray))
 import Data.List (reverse)
+import Data.List as Data.List
 import Data.Maybe (Maybe(Nothing))
 import Data.StrMap (empty)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(Tuple))
 import Routing.Bob.Query.Prim (Value, ValueParser, ValueSerializer, ValueBoomerang, toValueParser)
-import Routing.Bob.UrlBoomerang (UrlSerializer, Url, UrlBoomerang, UrlParser, parseURL, printURL)
+import Routing.Bob.UrlBoomerang (Url(..), UrlBoomerang, UrlParser, UrlSerializer, parseURL, printURL)
 import Text.Boomerang.HStack (type (:-), hHead, (:-))
-import Text.Boomerang.Prim (Serializer(Serializer), runSerializer, Boomerang(Boomerang))
-import Text.Parsing.Parser (parseErrorMessage, runParser)
+import Text.Boomerang.Prim (Boomerang(Boomerang), Serializer(Serializer), parse1, runSerializer)
+import Text.Parsing.Parser (parseErrorMessage)
 
 
 toArrayParser ::
@@ -29,7 +30,7 @@ toArrayParser valuePrs =
   parseValue :: Value -> Either String (r -> (GenericSpine :- r))
   parseValue val = do
     urls <- note ("Some of values are incorrectly encoded: \"" <> show val <> "\"") (for val parseURL)
-    fs <- fmapL parseErrorMessage (for urls (flip runParser valuePrs))
+    fs <- fmapL parseErrorMessage (for urls (parse1 valuePrs))
     pure $ (\r -> (SArray <<< fromFoldable <<< reverse <<< map (const <<< hHead <<< (_ $ r)) $ fs) :- r)
 
 toArraySerializer ::
@@ -43,7 +44,7 @@ toArraySerializer valueSer =
     case b of
       SArray vs -> do
         ts <- for vs (runSerializer valueSer <<< (_ :- r) <<< (_ $ unit))
-        vs' <- for ts (printURL <<< (\(Tuple ser' _) -> ser' ({ path: "", query: empty } :: Url) ))
+        vs' <- for ts (printURL <<< (\(Tuple ser' _) -> ser' (Url { path: "", query: empty }) ))
         pure (Tuple (Data.List.fromFoldable vs' <> _) r)
       _ -> Nothing
 

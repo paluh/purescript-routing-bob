@@ -1,24 +1,24 @@
 module Routing.Bob.Query.Prim where
 
 import Prelude
+
 import Control.Monad.Except.Trans (ExceptT(..), runExceptT)
 import Control.Monad.State.Trans (StateT(..), runStateT)
 import Data.Either (Either(Left, Right))
-import Data.Identity (Identity)
 import Data.List (List(Nil))
 import Data.Maybe (Maybe(Nothing, Just))
 import Data.Newtype (unwrap)
 import Data.StrMap (insert, pop)
 import Data.Tuple (Tuple(Tuple))
-import Routing.Bob.UrlBoomerang (UrlBoomerang, UrlSerializer, UrlParser, Url)
+import Routing.Bob.UrlBoomerang (Url(..), UrlBoomerang, UrlParser, UrlSerializer)
 import Text.Boomerang.HStack (type (:-))
-import Text.Boomerang.Prim (Serializer(Serializer), runSerializer, Boomerang(Boomerang))
+import Text.Boomerang.Prim (Boomerang(Boomerang), Parsers(..), Serializer(Serializer), runSerializer)
 import Text.Parsing.Parser (ParseError, ParseState(ParseState), ParserT(ParserT), fail)
 import Text.Parsing.Parser.Pos (Position)
 
 type Key = String
 type Value = List String
-type ValueParser a b = ParserT Value Identity (a -> b)
+type ValueParser a b = Parsers Value (a -> b)
 type ValueSerializer b a = Serializer Value b a
 type ValueBoomerang a b = Boomerang Value a b
 
@@ -29,21 +29,21 @@ type ValueBoomerang a b = Boomerang Value a b
 toQueryParser ::
   forall a r. Key -> ValueParser r (a :- r) -> UrlParser r (a :- r)
 toQueryParser key valuePrs =
-  ParserT <<< ExceptT <<< StateT $ parser
+  Parsers <<< ParserT <<< ExceptT <<< StateT $ parser
  where
   parser ::
     ParseState Url ->
-    Identity
+    List
       (Tuple (Either ParseError (r -> (a :- r))) (ParseState Url))
-  parser (ParseState i position c) =
+  parser (ParseState (Url i) position c) =
     let
       v = case pop key i.query of
         Nothing -> { value: Nil, query: i.query }
         Just (Tuple l query') -> { value: l, query: query' }
     in do
-      Tuple e (ParseState path' p' c') <- runStateT (runExceptT (unwrap valuePrs)) (ParseState v.value position false)
+      Tuple e (ParseState path' p' c') <- runStateT (runExceptT (unwrap <<< unwrap $ valuePrs)) (ParseState v.value position false)
       let i' = i { query = v.query }
-      pure (Tuple e (ParseState i' position c'))
+      pure (Tuple e (ParseState (Url i') position c'))
 
 toQuerySerializer ::
   forall a r. Key -> ValueSerializer (a :- r) r -> UrlSerializer (a :- r) r
@@ -55,7 +55,7 @@ toQuerySerializer key valueSer =
       Just (Tuple sf rest) ->
         let
           value = sf Nil
-        in pure (Tuple (\r -> r { query = insert' key value r.query}) rest)
+        in pure (Tuple (\(Url r) -> Url (r { query = insert' key value r.query})) rest)
       Nothing -> Nothing
 
   insert' _ Nil query = query
@@ -91,11 +91,11 @@ toValueParser ::
     (Value -> Either String (r -> (a :- r))) ->
     ValueParser r (a :- r)
 toValueParser parseValue =
-  ParserT <<< ExceptT <<< StateT $ parseFunction
+  Parsers <<< ParserT <<< ExceptT <<< StateT $ parseFunction
  where
   parseFunction ::
     ParseState Value ->
-    Identity
+    List
       (Tuple (Either ParseError (r -> (a :- r))) (ParseState Value))
   parseFunction (ParseState input position consumed) =
     case parseValue input of
