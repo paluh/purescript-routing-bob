@@ -11,20 +11,22 @@ import Control.Monad.Eff.Timer (TIMER)
 import Data.Generic (gShow, class Generic, gEq)
 import Data.Generic.Rep as Generic.Rep
 import Data.List (List(Nil), (:))
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), isJust)
 import Data.StrMap (StrMap, empty)
-import Data.String (dropWhile)
+import Data.String (Pattern(..), dropWhile, lastIndexOf)
+import Data.Symbol (SProxy(..))
 import Data.Tuple (Tuple(Tuple))
 import Data.URI (Query(Query))
 import Data.URI.Query as Query
-import Routing.Bob (Router, defaultOptions, fromUrl, genericFromUrl', genericToUrl', router, router', toUrl)
+import Routing.Bob (Router(..), defaultOptions, fromUrl, genericFromUrl', genericToUrl', router, router', toUrl)
 import Routing.Bob.UrlBoomerang (UrlBoomerang, liftStringBoomerang)
 import Test.Unit (suite, failure, test)
 import Test.Unit.Assert (equal)
 import Test.Unit.Console (TESTOUTPUT)
 import Test.Unit.Main (runTest)
-import Text.Boomerang.HStack (HCons)
-import Text.Boomerang.String (manyNoneOf)
+import Text.Boomerang.Generic (constructorBoomerang)
+import Text.Boomerang.HStack (HCons, type (:-))
+import Text.Boomerang.String (lit, manyNoneOf)
 import Text.Parsing.StringParser (runParser)
 import Type.Proxy (Proxy(..))
 
@@ -168,6 +170,7 @@ derive instance genericSideBarRoute :: Generic SideBarRoute
 data AppRoute = AppRoute MainWindowRoute SideBarRoute
 derive instance genericAppRoute :: Generic AppRoute
 
+-- Urls with integrated root path
 data UrlsWithRoot = Root | Page1 String | Page2 Int
 derive instance genericUrlsWithRoot ∷ Generic UrlsWithRoot
 instance eqUrlsWithRoot :: Eq UrlsWithRoot where
@@ -175,6 +178,31 @@ instance eqUrlsWithRoot :: Eq UrlsWithRoot where
 instance showUrlsWithRoot :: Show UrlsWithRoot where
   show = gShow
 
+-- Another strategy to handle root path
+data WithRoot r = WRoot | WSub r
+derive instance genericRepWithRoot ∷ Generic.Rep.Generic (WithRoot a) _
+derive instance genericWithRoot ∷ (Generic a) ⇒ Generic (WithRoot a)
+instance eqWithRoot :: (Generic (WithRoot a)) ⇒ Eq (WithRoot a) where
+  eq = gEq
+instance showWithRoot :: (Generic (WithRoot a)) ⇒ Show (WithRoot a) where
+  show = gShow
+
+subrouteR :: forall a r
+  . UrlBoomerang r (a :- r)
+  → UrlBoomerang r (WithRoot a :- r)
+subrouteR r = constructorBoomerang (SProxy :: SProxy "WSub") <<< r
+rootR :: forall a r. UrlBoomerang r (WithRoot a :- r)
+rootR = constructorBoomerang (SProxy :: SProxy "WRoot") <<< liftStringBoomerang (lit "")
+
+addRoot :: forall a r t
+  . (Generic.Rep.Generic a t)
+  ⇒ Router a
+  -> Router (WithRoot a)
+addRoot (Router r) =
+  Router (subrouteR r <> rootR)
+
+isSuffixOf :: Pattern -> String -> Boolean
+isSuffixOf suffix = isJust <<< lastIndexOf suffix
 
 main :: forall e. Eff ( timer :: TIMER
                       , avar :: AVAR
@@ -234,7 +262,7 @@ main = runTest $ suite "Routing.Bob handles" do
 
     test "root path encoding" do
       let rObj = Root
-          serializeConstructorName "Test.Main.Root" = ""
+          serializeConstructorName s | (Pattern ".Root") `isSuffixOf` s = ""
           serializeConstructorName s = defaultOptions.serializeConstructorName s
       case router ({ serializeConstructorName: serializeConstructorName }) (Proxy :: Proxy UrlsWithRoot) of
         Nothing -> failure ("Router generation failed")
@@ -245,6 +273,21 @@ main = runTest $ suite "Routing.Bob handles" do
           equal "page1/param" (toUrl r (Page1 "param"))
           equal "page2/8" (toUrl r (Page2 8))
           equal (Just (Page1 "param")) (fromUrl r "page1/param")
+
+    test "added root path encoding" do
+      let
+        fObj = WSub (FirstConstructor 8 true 9)
+        sObj = WSub (SecondConstructor false)
+        rObj = WRoot
+      case router defaultOptions (Proxy :: Proxy UnionOfPrimitivePositionalValues) of
+        Nothing -> failure ("Router generation failed")
+        Just r -> do
+          let r' = addRoot r
+          equal "" (toUrl r' WRoot)
+          equal (Just WRoot) (fromUrl r' "")
+
+          equal "first-constructor/8/on/3" (toUrl r' (WSub (FirstConstructor 8 true 3)))
+          equal "second-constructor/off" (toUrl r' (WSub (SecondConstructor false)))
 
     test "through generic helpers" do
         equal
@@ -257,16 +300,16 @@ main = runTest $ suite "Routing.Bob handles" do
         equal (Just (FirstConstructor 8 true 9)) (genericFromUrl' "first-constructor/8/on/9")
         equal (Just (SecondConstructor false)) (genericFromUrl' "second-constructor/off")
 
-    -- test "through generic helpers mixed with boomerang generic" do
-    --     equal
-    --       (Just "first-constructor/8/on/9")
-    --       (genericToUrl' (FirstConstructor 8 true 9))
-    --     equal
-    --       (Just "second-constructor/off")
-    --       (genericToUrl' (SecondConstructor false))
+    test "through generic helpers mixed with boomerang generic" do
+        equal
+          (Just "first-constructor/8/on/9")
+          (genericToUrl' (FirstConstructor 8 true 9))
+        equal
+          (Just "second-constructor/off")
+          (genericToUrl' (SecondConstructor false))
 
-    --     equal (Just (FirstConstructor 8 true 9)) (genericFromUrl' "first-constructor/8/on/9")
-    --     equal (Just (SecondConstructor false)) (genericFromUrl' "second-constructor/off")
+        equal (Just (FirstConstructor 8 true 9)) (genericFromUrl' "first-constructor/8/on/9")
+        equal (Just (SecondConstructor false)) (genericFromUrl' "second-constructor/off")
 
     test "which contains nested structure with primitive values" do
       let obj = NestedStructureWithPrimitivePositionvalValue (PrimitivePositionalValue 8)
