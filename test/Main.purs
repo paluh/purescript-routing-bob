@@ -194,7 +194,7 @@ subrouteR r = constructorBoomerang (SProxy :: SProxy "WSub") <<< r
 rootR :: forall a r. UrlBoomerang r (WithRoot a :- r)
 rootR = constructorBoomerang (SProxy :: SProxy "WRoot") <<< liftStringBoomerang (lit "")
 
-addRoot :: forall a r t
+addRoot :: forall a t
   . (Generic.Rep.Generic a t)
   ⇒ Router a
   -> Router (WithRoot a)
@@ -393,3 +393,9 @@ main = runTest $ suite "Routing.Bob handles" do
         equal
           (Just "?arrayOfStrings=string1&arrayOfStrings=string2&arrayOfInts=1")
           (genericToUrl' p)
+    test "with root prefix" do
+      let obj = PrimitivePositionalValues 8 true 9
+      withRouter (Proxy :: Proxy PrimitivePositionalValues) (\(Router r) -> do
+        let r' = Router (liftStringBoomerang (lit "/") <<< r)
+        equal "/8/on/9" (toUrl r' obj)
+        equal (Just obj) (fromUrl r' "/8/on/9"))

@@ -22,12 +22,14 @@ import Routing.Bob.Query.Prim (toQueryBoomerang)
 import Routing.Bob.Query.RequiredValue (toRequiredValueBoomerang)
 import Routing.Bob.RecursionSchemes (anaM, cata)
 import Routing.Bob.Signature (fromGenericSignature, SigRecValueF(SigRecArrayF, SigRecOptionalValueF, SigRecRequiredValueF), SigF(SigStringF, SigProdF, SigIntF, SigBooleanF, SigRecordF))
-import Routing.Bob.UrlBoomerang (Url(Url), UrlBoomerang, boolean, int, liftStringBoomerang, parseURL, printURL, str)
-import Text.Boomerang.Combinators (eof, maph, nil, duck1, cons)
+import Routing.Bob.UrlBoomerang (Url(Url), UrlBoomerang, boolean, int, liftStringPrs, liftStringBoomerang, parseURL, printURL, str)
+import Text.Boomerang.Combinators (maph, nil, duck1, cons)
 import Text.Boomerang.HStack (type (:-), HNil, hHead, hNil, hSingleton)
-import Text.Boomerang.Prim (Boomerang(Boomerang), parse1, runSerializer)
+import Text.Boomerang.Prim (Boomerang(Boomerang), Parsers(..), parse1, runSerializer)
 import Text.Boomerang.String (lit)
+import Text.Parsing.Parser.String (eof)
 import Type.Proxy (Proxy(Proxy))
+
 
 type UrlBoomerangForGenericSpine r = UrlBoomerang r (GenericSpine :- r)
 
@@ -114,8 +116,11 @@ toSpineBoomerang _ SigStringF =
   ser _        = Nothing
 
 parse :: forall a. UrlBoomerang HNil (a :- HNil) -> Url -> Maybe a
-parse (Boomerang b) tok = do
-  f <- hush (parse1 (b.prs) tok)
+parse (Boomerang b) url = do
+  f <- hush (parse1 (do
+    r <- b.prs
+    liftStringPrs (Parsers eof)
+    pure r) url)
   pure (hHead (f hNil))
 
 serialize :: forall a. UrlBoomerang HNil (a :- HNil) -> a -> Maybe Url
@@ -160,7 +165,7 @@ derive instance newtypeRouter :: Newtype (Router a) _
 router :: forall a. (Generic a) => Options -> Proxy a -> Maybe (Router a)
 router opts p = do
   b <- bob opts p
-  pure $ Router (b <<< eof)
+  pure $ Router b
 
 router' :: forall a. Generic a => Proxy a -> Maybe (Router a)
 router' = router defaultOptions
