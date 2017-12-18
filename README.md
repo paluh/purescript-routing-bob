@@ -41,6 +41,7 @@ Just to give you a hint what this library does, let's copy some tests' fragments
     let fObj = FirstConstructor 8 true 9
 
         sObj = SecondConstructor false
+        checkOpt i = case_ # on _name (v i)
 
         -- generting route for given type type:
 
@@ -139,7 +140,8 @@ You can have arbitrary nesting of data types which will be translated into neste
 
 Here you have internal representation of language constructs which are already covered by this library:
 
-    ```purescript
+   ```purescript
+
     type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
 
     data SigF r
@@ -156,7 +158,7 @@ Here you have internal representation of language constructs which are already c
       = SigRecRequiredValueF r
       | SigRecOptionalValueF JustConstructorName NothingConstrtuctorName r
       | SigRecArrayF r
-    ```
+   ```
 
 If you have any ideas how to nicely extend this set please let me know...
 
