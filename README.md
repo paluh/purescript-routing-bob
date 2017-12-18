@@ -139,6 +139,7 @@ You can have arbitrary nesting of data types which will be translated into neste
 
 Here you have internal representation of language constructs which are already covered by this library:
 
+    ```purescript
     type DataConstructorF r = { sigConstructor :: String, sigValues :: List r}
 
     data SigF r
@@ -155,6 +156,7 @@ Here you have internal representation of language constructs which are already c
       = SigRecRequiredValueF r
       | SigRecOptionalValueF JustConstructorName NothingConstrtuctorName r
       | SigRecArrayF r
+    ```
 
 If you have any ideas how to nicely extend this set please let me know...
 
