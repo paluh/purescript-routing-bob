@@ -1,6 +1,10 @@
 # purescript-routing-bob
 
-Let me introduce to you Bob The Router (known also as "Pendulum Bob") - simple (but usable) example of partial bidirectional routes generator based on [purescript-boomerang](https://github.com/paluh/purescript-boomerang) and [purescript-generics](https://github.com/paluh/purescript-gnerics).
+Let me introduce to you Bob The Router (known also as "Pendulum Bob") - simple (but usable) example of partial bidirectional routes generator based on [purescript-boomerang](https://github.com/paluh/purescript-boomerang) and [purescript-generics](https://github.com/purescript/purescript-generics).
+
+## Warning
+
+This library is based on old generic interface and needs a rewrite in order to work with [purescript-generic-reps](https://github.com/purescript/purescript-generic-reps). I'm not sure if it preserves current API after this upgrade...
 
 ## Installation
 
