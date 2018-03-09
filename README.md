@@ -45,7 +45,6 @@ Just to give you a hint what this library does, let's copy some tests' fragments
     let fObj = FirstConstructor 8 true 9
 
         sObj = SecondConstructor false
-        checkOpt i = case_ # on _name (v i)
 
         -- generting route for given type type:
 
